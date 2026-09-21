@@ -97,8 +97,6 @@ function buildMeridianStream(entry, meta, epMeta, season, episode) {
     return {
         name: `${PROVIDER_NAME} | Meridian`,
         title,
-        size: title,
-        description: title,
         url: entry.url,
         quality: 'Auto',
         format: 'm3u8',
@@ -161,7 +159,13 @@ async function getStreams(tmdbId, mediaType, season, episode) {
 
     const headers = buildPlaybackHeaders();
 
-    const isTv = mediaType === 'tv' || mediaType === 'series' || mediaType === 'anime' || (season != null && episode != null);
+    // An explicit "movie" must win. Otherwise a stray season/episode pair (some callers
+    // pass 0/0 rather than null for films) would silently turn a film lookup into a TV
+    // lookup, and every source would then be queried with the wrong route.
+    const declaredType = String(mediaType || '').toLowerCase();
+    const hasEpisodeCoords = season != null && episode != null;
+    const isTv = declaredType === 'tv' || declaredType === 'series' || declaredType === 'anime'
+        || (declaredType !== 'movie' && hasEpisodeCoords);
     const normType = isTv ? 'tv' : 'movie';
     const normSeason = isTv ? (Number(season) || 1) : null;
     const normEpisode = isTv ? (Number(episode) || 1) : null;

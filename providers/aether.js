@@ -1,6 +1,6 @@
 /**
  * aether - Built from src/aether/
- * Generated: 2026-09-21T08:13:36.540Z
+ * Generated: 2026-09-21T08:20:41.942Z
  */
 var __async = (__this, __arguments, generator) => {
   return new Promise((resolve, reject) => {
@@ -639,8 +639,6 @@ function buildMeridianStream(entry, meta, epMeta, season, episode) {
   return {
     name: `${PROVIDER_NAME2} | Meridian`,
     title,
-    size: title,
-    description: title,
     url: entry.url,
     quality: "Auto",
     format: "m3u8",
@@ -698,7 +696,9 @@ function getStreams(tmdbId, mediaType, season, episode) {
   return __async(this, null, function* () {
     const { token, regionCode, preferHls, spanishLang, enableSpanish, enableExtraSources } = readSettings();
     const headers = buildPlaybackHeaders();
-    const isTv = mediaType === "tv" || mediaType === "series" || mediaType === "anime" || season != null && episode != null;
+    const declaredType = String(mediaType || "").toLowerCase();
+    const hasEpisodeCoords = season != null && episode != null;
+    const isTv = declaredType === "tv" || declaredType === "series" || declaredType === "anime" || declaredType !== "movie" && hasEpisodeCoords;
     const normType = isTv ? "tv" : "movie";
     const normSeason = isTv ? Number(season) || 1 : null;
     const normEpisode = isTv ? Number(episode) || 1 : null;
