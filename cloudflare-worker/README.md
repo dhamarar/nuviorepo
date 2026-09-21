@@ -21,7 +21,7 @@ Dengan Worker ini, proses enkripsi dan request biner dilakukan di Cloudflare Wor
 2. Di menu sebelah kiri, pilih **Workers & Pages** -> **Create application** -> **Create Worker**.
 3. Beri nama worker (misal: `cinejoy-resolver`), lalu klik **Deploy**.
 4. Klik **Edit code** (Quick Edit di browser).
-5. Hapus semua kode bawaan, lalu salin (copy) seluruh isi file [`cinejoy-worker.js`](file:///c:/Users/asus/Desktop/csext/nuviorepo/cloudflare-worker/cinejoy-worker.js) ke editor tersebut.
+5. Hapus semua kode bawaan, lalu salin (copy) seluruh isi file [`cinejoy-worker.js`](cinejoy-worker.js) ke editor tersebut.
 6. Klik **Save and Deploy**.
 7. Salin URL Worker yang didapat (misal: `https://cinejoy-resolver.<username>.workers.dev`).
 
