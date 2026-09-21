@@ -13,6 +13,7 @@
 
 const esbuild = require('esbuild');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const srcDir = path.join(__dirname, 'src');
@@ -46,6 +47,16 @@ function getProvidersToBuild() {
         .map(d => d.name);
 }
 
+// The banner carries a generation timestamp, so two builds of identical sources still
+// differ by that one line. Comparing with the banner removed — and line endings
+// normalised, since git may check the bundles out with CRLF while esbuild writes LF —
+// lets a rebuild leave the working tree alone instead of dirtying all 20 bundles.
+function stripBanner(text) {
+    const end = text.indexOf('*/');
+    const body = end === -1 ? text : text.slice(end + 2);
+    return body.replace(/\r\n/g, '\n');
+}
+
 async function buildProvider(providerName) {
     const providerDir = path.join(srcDir, providerName);
     const entryPoint = path.join(providerDir, 'index.js');
@@ -56,11 +67,14 @@ async function buildProvider(providerName) {
         return false;
     }
 
+    // Build to a scratch file first so an unchanged provider is never rewritten.
+    const scratchFile = path.join(os.tmpdir(), `${providerName}.${process.pid}.cs3build.js`);
+
     try {
-        const result = await esbuild.build({
+        await esbuild.build({
             entryPoints: [entryPoint],
             bundle: true,
-            outfile: outFile,
+            outfile: scratchFile,
             format: 'cjs',              // CommonJS for module.exports compatibility
             platform: 'neutral',        // Works in both browser and node-like environments
             target: 'es2016',           // Transpile async/await to generators for Hermes
@@ -73,11 +87,23 @@ async function buildProvider(providerName) {
             logLevel: 'warning'
         });
 
-        const stats = fs.statSync(outFile);
-        const sizeKB = (stats.size / 1024).toFixed(1);
+        const fresh = fs.readFileSync(scratchFile, 'utf8');
+        const previous = fs.existsSync(outFile) ? fs.readFileSync(outFile, 'utf8') : null;
+
+        if (previous !== null && stripBanner(previous) === stripBanner(fresh)) {
+            fs.unlinkSync(scratchFile);
+            const sizeKB = (fs.statSync(outFile).size / 1024).toFixed(1);
+            console.log(`⏭️  ${providerName}.js (${sizeKB} KB, already up to date)`);
+            return true;
+        }
+
+        fs.writeFileSync(outFile, fresh);
+        fs.unlinkSync(scratchFile);
+        const sizeKB = (Buffer.byteLength(fresh) / 1024).toFixed(1);
         console.log(`✅ ${providerName}.js (${sizeKB} KB)`);
         return true;
     } catch (err) {
+        if (fs.existsSync(scratchFile)) fs.unlinkSync(scratchFile);
         console.error(`❌ Failed to build ${providerName}:`, err.message);
         return false;
     }
