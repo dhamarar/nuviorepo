@@ -1,6 +1,6 @@
 /**
  * aether - Built from src/aether/
- * Generated: 2026-09-21T08:07:16.216Z
+ * Generated: 2026-09-21T08:13:36.540Z
  */
 var __async = (__this, __arguments, generator) => {
   return new Promise((resolve, reject) => {
@@ -87,6 +87,7 @@ var LANGUAGE_CODES = {
   estonian: "et",
   finnish: "fi",
   french: "fr",
+  "french (canada)": "fr-ca",
   german: "de",
   greek: "el",
   hebrew: "he",
@@ -470,6 +471,52 @@ function fetchExtraSources(tmdbId, mediaType, season, episode) {
   });
 }
 
+// src/aether/meridian.js
+var MERIDIAN_HOST = "https://meridian.aether.cx";
+function apiHeaders() {
+  return {
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Origin": "https://aether.st",
+    "Referer": "https://aether.st/",
+    "Sec-Fetch-Dest": "empty",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Site": "cross-site",
+    "User-Agent": USER_AGENT
+  };
+}
+function fetchMeridianMovie(tmdbId) {
+  return __async(this, null, function* () {
+    const result = yield fetchJson(`${MERIDIAN_HOST}/movie/${tmdbId}`, apiHeaders(), 1e4);
+    const body = result.data;
+    if (!result.ok || !body || typeof body.url !== "string" || body.url.indexOf("http") !== 0) {
+      return null;
+    }
+    let referer = "";
+    try {
+      referer = new URL(body.url).origin + "/";
+    } catch (error) {
+      referer = "";
+    }
+    const playbackHeaders = referer ? { "User-Agent": USER_AGENT, "Referer": referer } : { "User-Agent": USER_AGENT };
+    const subtitles = (Array.isArray(body.subtitles) ? body.subtitles : []).filter((track) => track && typeof track.url === "string" && track.url.indexOf("http") === 0).map((track) => {
+      const code = languageNameToCode(track.language) || "und";
+      return {
+        url: track.url,
+        language: code,
+        name: languageDisplayName(code, track.language),
+        headers: { "User-Agent": USER_AGENT }
+      };
+    });
+    return {
+      title: typeof body.title === "string" ? body.title : "",
+      url: body.url,
+      headers: playbackHeaders,
+      subtitles
+    };
+  });
+}
+
 // src/aether/spanish.js
 function requestLang(url) {
   return __async(this, null, function* () {
@@ -585,6 +632,23 @@ function buildHlsStream(payload, meta, epMeta, season, episode, regionCode, head
     provider: "aether"
   };
 }
+function buildMeridianStream(entry, meta, epMeta, season, episode) {
+  const subNote = entry.subtitles.length ? `\u{1F4AC} ${entry.subtitles.length} subs` : "";
+  const title = `${buildStreamTitle(meta, epMeta, "Auto", "HLS", season, episode, "")}
+\u{1F513} Token-free \xB7 Meridian${subNote ? " | " + subNote : ""}`;
+  return {
+    name: `${PROVIDER_NAME2} | Meridian`,
+    title,
+    size: title,
+    description: title,
+    url: entry.url,
+    quality: "Auto",
+    format: "m3u8",
+    headers: entry.headers,
+    subtitles: entry.subtitles,
+    provider: "aether"
+  };
+}
 function buildExtraStream(entry, meta, epMeta, season, episode) {
   const label = entry.source.label;
   const title = `${buildStreamTitle(meta, epMeta, "Auto", "HLS", season, episode, "")}
@@ -646,6 +710,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
       isTv ? getEpisodeMeta(normTmdbId, normSeason, normEpisode) : Promise.resolve(null)
     ]).catch(() => [null, null]);
     const extrasPromise = enableExtraSources ? fetchExtraSources(normTmdbId, normType, normSeason, normEpisode).catch(() => []) : Promise.resolve([]);
+    const meridianPromise = enableExtraSources && !isTv ? fetchMeridianMovie(normTmdbId).catch(() => null) : Promise.resolve(null);
     const spanishPromise = enableSpanish ? fetchSpanishPlaylist(normTmdbId, normType, normSeason, normEpisode, spanishLang).catch((err) => {
       console.log(`[Aether] Token-free source unavailable: ${err.message}`);
       return null;
@@ -658,9 +723,10 @@ function getStreams(tmdbId, mediaType, season, episode) {
       logFailure("HLS", err);
       return null;
     }) : Promise.resolve(null);
-    const [metadata, extraFound, spanishPlaylist, mp4Payload, hlsPayload] = yield Promise.all([
+    const [metadata, extraFound, meridianMovie, spanishPlaylist, mp4Payload, hlsPayload] = yield Promise.all([
       metadataPromise,
       extrasPromise,
+      meridianPromise,
       spanishPromise,
       mp4Promise,
       hlsPromise
@@ -680,9 +746,20 @@ function getStreams(tmdbId, mediaType, season, episode) {
       hlsStreams.push(buildHlsStream(hlsPayload, meta, epMeta, normSeason, normEpisode, regionCode, headers));
       console.log(`[Aether] FEM HLS via ${hlsPayload.endpoint.api}: ok`);
     }
+    if (meridianMovie) {
+      extraStreams.push(buildMeridianStream(meridianMovie, meta, epMeta, normSeason, normEpisode));
+    }
     if (extraFound && extraFound.length > 0) {
       extraFound.forEach((entry) => extraStreams.push(buildExtraStream(entry, meta, epMeta, normSeason, normEpisode)));
-      console.log(`[Aether] Token-free extras: ${extraFound.map((entry) => entry.source.label).join(", ")}`);
+    }
+    if (meridianMovie || extraFound && extraFound.length > 0) {
+      const labels = [];
+      if (meridianMovie) {
+        labels.push("Meridian" + (meridianMovie.subtitles.length ? " (" + meridianMovie.subtitles.length + " subs)" : ""));
+      }
+      if (extraFound)
+        extraFound.forEach((entry) => labels.push(entry.source.label));
+      console.log(`[Aether] Token-free extras: ${labels.join(", ")}`);
     }
     if (spanishPlaylist) {
       tokenFreeStreams.push(buildSpanishStream(spanishPlaylist, meta, epMeta, normSeason, normEpisode));
@@ -768,8 +845,8 @@ function onSettings() {
       {
         type: "toggle",
         key: "enableExtraSources",
-        label: "Include Link / Lul",
-        description: "Two token-free sources queried together. Every one that carries the title is listed, so you can pick.",
+        label: "Include Meridian / Link / Lul",
+        description: "Token-free sources queried together. Meridian carries movies and often brings subtitle tracks; every source that has the title is listed so you can pick.",
         defaultValue: true
       },
       {

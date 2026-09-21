@@ -214,6 +214,7 @@ export const LANGUAGE_CODES = {
     estonian: 'et',
     finnish: 'fi',
     french: 'fr',
+    'french (canada)': 'fr-ca',
     german: 'de',
     greek: 'el',
     hebrew: 'he',

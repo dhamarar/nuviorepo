@@ -1,6 +1,7 @@
 import { PROVIDER_NAME, QUALITY_RANK, REGION_MAP, SPANISH_LANGS } from './constants.js';
 import { FemError, checkToken, fetchHlsPayload, fetchMp4Payload } from './femapi.js';
 import { fetchExtraSources } from './extras.js';
+import { fetchMeridianMovie } from './meridian.js';
 import { fetchSpanishPlaylist } from './spanish.js';
 import {
     buildPlaybackHeaders,
@@ -89,6 +90,24 @@ function buildHlsStream(payload, meta, epMeta, season, episode, regionCode, head
     };
 }
 
+function buildMeridianStream(entry, meta, epMeta, season, episode) {
+    const subNote = entry.subtitles.length ? `💬 ${entry.subtitles.length} subs` : '';
+    const title = `${buildStreamTitle(meta, epMeta, 'Auto', 'HLS', season, episode, '')}\n🔓 Token-free · Meridian${subNote ? ' | ' + subNote : ''}`;
+
+    return {
+        name: `${PROVIDER_NAME} | Meridian`,
+        title,
+        size: title,
+        description: title,
+        url: entry.url,
+        quality: 'Auto',
+        format: 'm3u8',
+        headers: entry.headers,
+        subtitles: entry.subtitles,
+        provider: 'aether'
+    };
+}
+
 function buildExtraStream(entry, meta, epMeta, season, episode) {
     const label = entry.source.label;
     const title = `${buildStreamTitle(meta, epMeta, 'Auto', 'HLS', season, episode, '')}\n🔓 Token-free · ${label}`;
@@ -161,6 +180,11 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         ? fetchExtraSources(normTmdbId, normType, normSeason, normEpisode).catch(() => [])
         : Promise.resolve([]);
 
+    // Meridian is movies only — its /tv/ route answers HTML 404.
+    const meridianPromise = enableExtraSources && !isTv
+        ? fetchMeridianMovie(normTmdbId).catch(() => null)
+        : Promise.resolve(null);
+
     const spanishPromise = enableSpanish
         ? fetchSpanishPlaylist(normTmdbId, normType, normSeason, normEpisode, spanishLang).catch(err => {
             console.log(`[Aether] Token-free source unavailable: ${err.message}`);
@@ -182,9 +206,10 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         })
         : Promise.resolve(null);
 
-    const [metadata, extraFound, spanishPlaylist, mp4Payload, hlsPayload] = await Promise.all([
+    const [metadata, extraFound, meridianMovie, spanishPlaylist, mp4Payload, hlsPayload] = await Promise.all([
         metadataPromise,
         extrasPromise,
+        meridianPromise,
         spanishPromise,
         mp4Promise,
         hlsPromise
@@ -209,9 +234,21 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         console.log(`[Aether] FEM HLS via ${hlsPayload.endpoint.api}: ok`);
     }
 
+    if (meridianMovie) {
+        extraStreams.push(buildMeridianStream(meridianMovie, meta, epMeta, normSeason, normEpisode));
+    }
+
     if (extraFound && extraFound.length > 0) {
         extraFound.forEach(entry => extraStreams.push(buildExtraStream(entry, meta, epMeta, normSeason, normEpisode)));
-        console.log(`[Aether] Token-free extras: ${extraFound.map(entry => entry.source.label).join(', ')}`);
+    }
+
+    if (meridianMovie || (extraFound && extraFound.length > 0)) {
+        const labels = [];
+        if (meridianMovie) {
+            labels.push('Meridian' + (meridianMovie.subtitles.length ? ' (' + meridianMovie.subtitles.length + ' subs)' : ''));
+        }
+        if (extraFound) extraFound.forEach(entry => labels.push(entry.source.label));
+        console.log(`[Aether] Token-free extras: ${labels.join(', ')}`);
     }
 
     if (spanishPlaylist) {
@@ -301,8 +338,8 @@ async function onSettings() {
         {
             type: 'toggle',
             key: 'enableExtraSources',
-            label: 'Include Link / Lul',
-            description: 'Two token-free sources queried together. Every one that carries the title is listed, so you can pick.',
+            label: 'Include Meridian / Link / Lul',
+            description: 'Token-free sources queried together. Meridian carries movies and often brings subtitle tracks; every source that has the title is listed so you can pick.',
             defaultValue: true
         },
         {
