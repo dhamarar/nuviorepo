@@ -14,7 +14,6 @@
       ],
       "filename": "providers/fibwatch.js",
       "enabled": true,
-      "hasSettings": true,
       "formats": [
         "mkv",
         "m3u8"
@@ -107,7 +106,6 @@
       ],
       "filename": "providers/movix.js",
       "enabled": true,
-      "hasSettings": true,
       "formats": [
         "mp4",
         "m3u8"
