@@ -9,6 +9,7 @@
         "serve": "node server.js"
     },
     "devDependencies": {
+        "@noble/ciphers": "^2.4.0",
         "esbuild": "^0.20.0",
         "nodemon": "^3.0.0"
     },
@@ -19,6 +20,7 @@
     ],
     "license": "GPL-3.0",
     "dependencies": {
+        "@noble/ciphers": "^2.4.0",
         "cheerio-without-node-native": "^0.20.2",
         "crypto-js": "^4.2.0"
     }

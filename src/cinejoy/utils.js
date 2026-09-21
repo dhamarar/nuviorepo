@@ -4,7 +4,9 @@ import {
     DEFAULT_API_HOST,
     CANDIDATE_API_HOSTS,
     TMDB_BASE_URL,
-    TMDB_API_KEY
+    TMDB_API_KEY,
+    FALLBACK_SERVERS,
+    HEADERS
 } from './constants.js';
 
 let cachedDomain = DEFAULT_DOMAIN;
@@ -26,7 +28,7 @@ export async function resolveDomain(force = false) {
             const timer = setTimeout(() => controller.abort(), 4000);
             const res = await fetch(candidate, {
                 signal: controller.signal,
-                headers: { "User-Agent": "Mozilla/5.0" }
+                headers: { "User-Agent": HEADERS["User-Agent"] }
             });
             clearTimeout(timer);
             if (res.ok || (res.status >= 200 && res.status < 400)) {
@@ -53,7 +55,7 @@ export async function getActiveServers(domain = DEFAULT_DOMAIN) {
                 headers: {
                     "Origin": cleanDomain,
                     "Referer": `${cleanDomain}/`,
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+                    "User-Agent": HEADERS["User-Agent"]
                 }
             });
             clearTimeout(timer);
@@ -65,7 +67,7 @@ export async function getActiveServers(domain = DEFAULT_DOMAIN) {
                     cachedApiHost = host;
                     const validServers = [];
                     for (const s of arr) {
-                        const name = (s.name || "").toLowerCase().trim();
+                        const name = (s.name || "").trim();
                         const status = (s.status || "").toLowerCase().trim();
                         if (name && (status === "" || status === "ok")) {
                             validServers.push(name);
@@ -77,28 +79,45 @@ export async function getActiveServers(domain = DEFAULT_DOMAIN) {
         } catch (e) {}
     }
 
-    return { host: cachedApiHost, servers: ["lisbon", "nebula", "solara", "athens"] };
+    return { host: cachedApiHost, servers: [...FALLBACK_SERVERS] };
 }
 
-export async function fetchOpenSubtitles(tmdbId, mediaType, season = 1, episode = 1) {
-    const subtitles = [];
+export async function getTmdbDetails(tmdbId, mediaType = "movie") {
     try {
-        const extUrl = `${TMDB_BASE_URL}/${mediaType === "tv" ? "tv" : "movie"}/${tmdbId}/external_ids?api_key=${TMDB_API_KEY}`;
-        const extRes = await fetch(extUrl, {
-            headers: { "Accept": "application/json", "User-Agent": "Mozilla/5.0" }
+        const type = mediaType === "tv" || mediaType === "series" ? "tv" : "movie";
+        const url = `${TMDB_BASE_URL}/${type}/${tmdbId}?api_key=${TMDB_API_KEY}&append_to_response=external_ids`;
+        const res = await fetch(url, {
+            headers: {
+                "Accept": "application/json",
+                "User-Agent": HEADERS["User-Agent"]
+            }
         });
-        if (!extRes.ok) return subtitles;
+        if (!res.ok) return null;
 
-        const extJson = await extRes.json();
-        const imdbId = extJson.imdb_id;
-        if (!imdbId) return subtitles;
+        const data = await res.json();
+        const title = type === "tv" ? (data.name || data.original_name) : (data.title || data.original_title);
+        const date = type === "tv" ? data.first_air_date : data.release_date;
+        const year = date ? date.split("-")[0] : "";
+        const imdbId = data.external_ids?.imdb_id || "";
 
-        const subUrl = mediaType === "tv"
+        return { title, year, imdbId };
+    } catch (e) {
+        console.warn("[Cinejoy] TMDB metadata fetch error:", e.message);
+        return null;
+    }
+}
+
+export async function fetchOpenSubtitles(imdbId, isTv = false, season = 1, episode = 1) {
+    const subtitles = [];
+    if (!imdbId) return subtitles;
+
+    try {
+        const subUrl = isTv
             ? `https://opensubtitles-v3.strem.io/subtitles/series/${imdbId}:${season}:${episode}.json`
             : `https://opensubtitles-v3.strem.io/subtitles/movie/${imdbId}.json`;
 
         const subRes = await fetch(subUrl, {
-            headers: { "User-Agent": "Mozilla/5.0" }
+            headers: { "User-Agent": HEADERS["User-Agent"] }
         });
         if (!subRes.ok) return subtitles;
 

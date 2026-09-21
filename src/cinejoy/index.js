@@ -1,29 +1,66 @@
-import { resolveDomain, getActiveServers, fetchOpenSubtitles } from './utils.js';
+import { resolveDomain, getActiveServers, getTmdbDetails, fetchOpenSubtitles } from './utils.js';
 import { seal } from './wasm.js';
 import { decrypt } from './crypto.js';
+import { HEADERS } from './constants.js';
 
 async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
-    console.log(`[Cinejoy] Fetching streams for TMDB ID: ${tmdbId}, Type: ${mediaType}, S: ${season}, E: ${episode}`);
+    const cleanTmdb = String(tmdbId || "").trim();
+    if (!cleanTmdb) {
+        console.warn("[Cinejoy] Empty TMDB ID provided");
+        return [];
+    }
+
+    const cleanMediaType = String(mediaType || "movie").toLowerCase().trim();
+    const isTv = cleanMediaType === "tv" || cleanMediaType === "series";
+    const cleanSeason = Number(season) || 1;
+    const cleanEpisode = Number(episode) || 1;
+
+    console.log(`[Cinejoy] Fetching streams for TMDB: ${cleanTmdb}, Type: ${isTv ? "tv" : "movie"}, S: ${cleanSeason}, E: ${cleanEpisode}`);
     const streams = [];
 
     try {
-        const domain = await resolveDomain();
-        const { host: apiHost, servers } = await getActiveServers(domain);
+        // Step 1: Resolve domain and fetch TMDB info concurrently
+        const domainPromise = resolveDomain();
+        const tmdbInfoPromise = getTmdbDetails(cleanTmdb, isTv ? "tv" : "movie");
+
+        const [domain, tmdbInfo] = await Promise.all([domainPromise, tmdbInfoPromise]);
+
+        // Step 2: Discover active servers and fetch OpenSubtitles concurrently
+        const serversPromise = getActiveServers(domain);
+        const openSubsPromise = tmdbInfo?.imdbId
+            ? fetchOpenSubtitles(tmdbInfo.imdbId, isTv, cleanSeason, cleanEpisode)
+            : Promise.resolve([]);
+
+        const [{ host: apiHost, servers }, openSubs] = await Promise.all([serversPromise, openSubsPromise]);
         console.log(`[Cinejoy] Active domain: ${domain}, API Host: ${apiHost}, Servers: ${servers.join(', ')}`);
 
-        const isTv = mediaType === "tv";
-        const endpoint = isTv ? "series" : "movie";
-        const payloadObj = isTv
-            ? { tmdb: String(tmdbId), season: String(season || 1), episode: String(episode || 1) }
-            : { tmdb: String(tmdbId) };
+        const streamHeaders = {
+            "Origin": domain,
+            "Referer": `${domain}/`,
+            "User-Agent": HEADERS["User-Agent"]
+        };
 
-        // Fetch OpenSubtitles in parallel as fallback/supplement
-        const openSubsPromise = fetchOpenSubtitles(tmdbId, mediaType, season, episode);
-
+        // Step 3: Query all servers in parallel
         const serverPromises = servers.map(async (server) => {
             try {
-                const path = `/${server}/${endpoint}`;
-                const sealed = await seal(path, payloadObj);
+                const serverDisplayName = server.charAt(0).toUpperCase() + server.slice(1);
+                const path = `/${server.toLowerCase()}/${isTv ? "series" : "movie"}`;
+                const payloadObj = isTv
+                    ? { tmdb: cleanTmdb, season: String(cleanSeason), episode: String(cleanEpisode) }
+                    : { tmdb: cleanTmdb };
+
+                const serverInfo = {
+                    server,
+                    isTv,
+                    tmdbId: cleanTmdb,
+                    season: cleanSeason,
+                    episode: cleanEpisode,
+                    title: tmdbInfo?.title || "",
+                    year: tmdbInfo?.year || "",
+                    imdbId: tmdbInfo?.imdbId || ""
+                };
+
+                const sealed = await seal(path, payloadObj, serverInfo);
 
                 const res = await fetch(`${apiHost}/g`, {
                     method: 'POST',
@@ -32,7 +69,7 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
                         'Content-Type': 'application/octet-stream',
                         'Origin': domain,
                         'Referer': `${domain}/`,
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+                        'User-Agent': HEADERS["User-Agent"]
                     }
                 });
 
@@ -58,14 +95,6 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
                         language: (c.language || c.id || "en").toLowerCase(),
                         name: c.language || c.id || "Subtitle"
                     })).filter(s => !!s.url);
-
-                    const streamHeaders = {
-                        "Origin": domain,
-                        "Referer": `${domain}/`,
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-                    };
-
-                    const serverDisplayName = server.charAt(0).toUpperCase() + server.slice(1);
 
                     if (type === "hls" && playlist) {
                         serverStreams.push({
@@ -102,15 +131,12 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
             }
         });
 
-        const [serverResults, openSubs] = await Promise.all([
-            Promise.all(serverPromises),
-            openSubsPromise
-        ]);
+        const serverResults = await Promise.all(serverPromises);
 
         for (const resList of serverResults) {
             if (Array.isArray(resList)) {
                 for (const stream of resList) {
-                    // Gabungkan subtitle OpenSubtitles jika belum ada di server
+                    // Supplement with OpenSubtitles if available
                     if (openSubs && openSubs.length > 0) {
                         const existingUrls = new Set(stream.subtitles.map(s => s.url));
                         for (const os of openSubs) {

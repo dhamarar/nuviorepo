@@ -1,6 +1,6 @@
 /**
  * kurage - Built from src/kurage/
- * Generated: 2026-09-21T01:02:39.514Z
+ * Generated: 2026-09-21T01:54:45.744Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
