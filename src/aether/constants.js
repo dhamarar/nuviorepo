@@ -90,10 +90,21 @@ export const AETHER_SITE_DOMAINS = ['aether.st', 'aether.ist', 'aether.mom'];
  * Playback note: the master playlist points at relative variant playlists on this same
  * host (so the headers must travel with the stream), and the segments themselves are
  * served from redirector.cdnsync.cloud as `/?t=<token>`. Each segment is a 70-byte
- * 1x1 PNG decoy prefix followed by 188-byte-aligned MPEG-TS; ffprobe reads it as
- * mpegts (h264 + aac, ~10s). ExoPlayer's TS extractor searches for the sync byte, so it
- * should skip the prefix, but that has not been confirmed in the actual player. That
- * CDN also returned 522 for 1 of 7 titles tested, so it is flaky.
+ * 1x1 PNG decoy prefix followed by 188-byte-aligned MPEG-TS, and the Content-Type even
+ * claims image/png. Deprefixed, ffmpeg decodes it cleanly (240 frames / 10.09s, no
+ * errors on stderr).
+ *
+ * ExoPlayer copes with that prefix by design — verified against its source, not assumed:
+ * TsExtractor.sniff() tries every start offset 0..187 looking for 5 sync bytes 188 apart
+ * and then skipFully()s to the match, and DefaultHlsExtractorFactory sniffs each
+ * candidate extractor before using it (falling back to TS if none sniffs). The lying
+ * Content-Type is ignored because the factory prefers the format's MIME type and then
+ * the actual bytes.
+ *
+ * NOT verified: any player lacking that resync behaviour — notably Apple's AVPlayer,
+ * which an iOS build would use — may fail on these segments.
+ *
+ * That CDN also returned 522 for 1 of 7 titles tested, so it is genuinely flaky.
  *
  * There is no aether.ist equivalent of this host, so the list is a one-element array
  * kept for shape and easy extension.
