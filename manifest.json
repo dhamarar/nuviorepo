@@ -1,6 +1,6 @@
 {
   "name": "Nuvio Repo",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "scrapers": [
     {
       "id": "fibwatch",
@@ -121,8 +121,8 @@
     {
       "id": "aether",
       "name": "Aether",
-      "description": "Movies and TV shows via Aether's FEM API (FebBox). Requires a free FebBox ui token.",
-      "version": "1.0.0",
+      "description": "Movies and TV shows from Aether's FEM API (FebBox), plus a token-free HLS source. A free FebBox ui token unlocks 4K/1080p MP4 and HLS.",
+      "version": "1.1.0",
       "author": "dhamarar",
       "supportedTypes": [
         "movie",
@@ -137,7 +137,8 @@
       ],
       "logo": "https://www.google.com/s2/favicons?domain=aether.st&sz=128",
       "contentLanguage": [
-        "en"
+        "en",
+        "es"
       ]
     }
   ]

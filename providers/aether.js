@@ -1,6 +1,6 @@
 /**
  * aether - Built from src/aether/
- * Generated: 2026-09-21T07:25:22.698Z
+ * Generated: 2026-09-21T07:29:45.454Z
  */
 var __async = (__this, __arguments, generator) => {
   return new Promise((resolve, reject) => {
@@ -33,6 +33,12 @@ var FEM_ENDPOINTS = [
   { api: "https://fembox.aether.cx", site: "https://aether.ist" },
   { api: "https://fembox.aether.mom", site: "https://aether.mom" }
 ];
+var SPANISH_HOSTS = ["https://le.aether.cx"];
+var SPANISH_LANGS = {
+  sub: "Subtitled (ES)",
+  esp: "Castellano",
+  lat: "Latino"
+};
 var QUALITY_LABELS = {
   ORG: "ORG",
   "4K": "4K",
@@ -155,6 +161,26 @@ function fetchJson(url, headers, timeoutMs = 15e3) {
     }
   });
 }
+function fetchFinalUrl(url, headers, timeoutMs = 15e3) {
+  return __async(this, null, function* () {
+    let timer = null;
+    try {
+      const response = yield Promise.race([
+        fetch(url, { method: "GET", redirect: "follow", headers }),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error("Request timed out")), timeoutMs);
+        })
+      ]);
+      const finalUrl = response.url || url;
+      return { ok: response.ok, status: response.status, url: finalUrl };
+    } catch (error) {
+      return { ok: false, status: 0, url, error: error.message };
+    } finally {
+      if (timer)
+        clearTimeout(timer);
+    }
+  });
+}
 function buildFemHeaders(site) {
   return {
     "Accept": "application/json, text/plain, */*",
@@ -166,6 +192,16 @@ function buildFemHeaders(site) {
 }
 function buildPlaybackHeaders() {
   return { "User-Agent": USER_AGENT };
+}
+function buildTokenFreeHeaders(site) {
+  const origin = site || "https://aether.st";
+  return {
+    "Accept": "*/*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Origin": origin,
+    "Referer": origin + "/",
+    "User-Agent": USER_AGENT
+  };
 }
 function languageNameToCode(name) {
   if (!name)
@@ -377,16 +413,40 @@ function checkToken(token) {
   });
 }
 
+// src/aether/spanish.js
+function fetchSpanishPlaylist(tmdbId, mediaType, season, episode, lang) {
+  return __async(this, null, function* () {
+    const path = mediaType === "tv" ? `/tv/${tmdbId}/${season}/${episode}` : `/movie/${tmdbId}`;
+    const attempts = [];
+    for (const host of SPANISH_HOSTS) {
+      const url = `${host}${path}?lang=${encodeURIComponent(lang)}`;
+      const result = yield fetchFinalUrl(url, buildTokenFreeHeaders("https://aether.st"));
+      if (result.ok && result.url) {
+        return { url: result.url, host, requested: url, label: SPANISH_LANGS[lang] || lang };
+      }
+      const detail = result.error ? `${result.error}` : `HTTP ${result.status}`;
+      attempts.push(`${host} -> ${detail}`);
+    }
+    const error = new Error(`Aether token-free source unavailable (${attempts.join("; ")})`);
+    error.attempts = attempts;
+    throw error;
+  });
+}
+
 // src/aether/index.js
 function readSettings() {
   const settings = globalThis.SCRAPER_SETTINGS || {};
   const token = String(settings.febboxToken || "").trim();
   const regionKey = String(settings.region || "").trim();
+  const spanishLang = SPANISH_LANGS[settings.spanishLang] ? settings.spanishLang : "sub";
   return {
     token,
     regionKey,
     regionCode: REGION_MAP[regionKey] || "",
-    preferHls: settings.preferHls === true
+    preferHls: settings.preferHls === true,
+    spanishLang,
+    // Default on: this is the only source that works before a token is set.
+    enableSpanish: settings.enableSpanish !== false
   };
 }
 function mapSubtitles(rawTracks, headers) {
@@ -439,6 +499,23 @@ function buildHlsStream(payload, meta, epMeta, season, episode, regionCode, head
     provider: "aether"
   };
 }
+function buildSpanishStream(playlist, meta, epMeta, season, episode, headers) {
+  const label = playlist.label || "ES";
+  const title = `${buildStreamTitle(meta, epMeta, label, "HLS", season, episode, "")}
+\u{1F513} Token-free source`;
+  return {
+    name: `${PROVIDER_NAME} | ${label}`,
+    title,
+    size: title,
+    description: title,
+    url: playlist.url,
+    quality: "Auto",
+    format: "m3u8",
+    headers,
+    subtitles: [],
+    provider: "aether"
+  };
+}
 function logFailure(kind, error) {
   if (error instanceof FemError) {
     console.log(`[Aether] FEM ${kind} unavailable (${error.reason}): ${error.message}`);
@@ -453,12 +530,7 @@ function logFailure(kind, error) {
 }
 function getStreams(tmdbId, mediaType, season, episode) {
   return __async(this, null, function* () {
-    const { token, regionCode, preferHls } = readSettings();
-    if (!token) {
-      console.log("[Aether] No FebBox token set. Add one in the Aether provider settings \u2014");
-      console.log("[Aether] FEM API scrapes FebBox with your own free account (100 GB/month).");
-      return [];
-    }
+    const { token, regionCode, preferHls, spanishLang, enableSpanish } = readSettings();
     const headers = buildPlaybackHeaders();
     const metadata = yield Promise.all([
       getTmdbMeta(tmdbId, mediaType),
@@ -468,35 +540,53 @@ function getStreams(tmdbId, mediaType, season, episode) {
     const epMeta = metadata[1];
     const mp4Streams = [];
     const hlsStreams = [];
-    try {
-      const mp4 = yield fetchMp4Payload(tmdbId, mediaType, season, episode, token);
-      const built = buildMp4Streams(mp4, meta, epMeta, season, episode, regionCode, headers);
-      mp4Streams.push(...built);
-      console.log(`[Aether] FEM MP4 via ${mp4.endpoint.api}: ${built.length} stream(s)`);
-    } catch (error) {
-      logFailure("MP4", error);
+    const tokenFreeStreams = [];
+    if (token) {
+      try {
+        const mp4 = yield fetchMp4Payload(tmdbId, mediaType, season, episode, token);
+        const built = buildMp4Streams(mp4, meta, epMeta, season, episode, regionCode, headers);
+        mp4Streams.push(...built);
+        console.log(`[Aether] FEM MP4 via ${mp4.endpoint.api}: ${built.length} stream(s)`);
+      } catch (error) {
+        logFailure("MP4", error);
+      }
+      try {
+        const hls = yield fetchHlsPayload(tmdbId, mediaType, season, episode, token);
+        hlsStreams.push(buildHlsStream(hls, meta, epMeta, season, episode, regionCode, headers));
+        console.log(`[Aether] FEM HLS via ${hls.endpoint.api}: ok`);
+      } catch (error) {
+        logFailure("HLS", error);
+      }
+    } else {
+      console.log("[Aether] No FebBox token set, so the FEM API is skipped.");
+      console.log("[Aether] Add one under Aether settings for 4K/1080p MP4 + HLS (free febbox.com account, 100 GB/month).");
     }
-    try {
-      const hls = yield fetchHlsPayload(tmdbId, mediaType, season, episode, token);
-      hlsStreams.push(buildHlsStream(hls, meta, epMeta, season, episode, regionCode, headers));
-      console.log(`[Aether] FEM HLS via ${hls.endpoint.api}: ok`);
-    } catch (error) {
-      logFailure("HLS", error);
+    if (enableSpanish) {
+      try {
+        const playlist = yield fetchSpanishPlaylist(tmdbId, mediaType, season, episode, spanishLang);
+        tokenFreeStreams.push(buildSpanishStream(playlist, meta, epMeta, season, episode, headers));
+        console.log(`[Aether] Token-free source via ${playlist.host}: ok (${playlist.label})`);
+      } catch (error) {
+        console.log(`[Aether] Token-free source unavailable: ${error.message}`);
+      }
     }
-    if (mp4Streams.length === 0 && hlsStreams.length === 0) {
-      const status = yield checkToken(token);
-      if (status.valid === false && status.reason === "bad-token") {
-        console.log("[Aether] The FebBox token is no longer valid \u2014 re-copy the `ui` cookie from febbox.com.");
-      } else if (status.valid === false && status.reason === "unreachable") {
-        console.log("[Aether] No Aether FEM API mirror could be reached.");
-      } else if (status.valid === true) {
-        console.log("[Aether] Token is fine; FEM simply has no stream for this title.");
-      } else {
-        console.log("[Aether] FEM returned nothing playable for this title.");
+    if (mp4Streams.length === 0 && hlsStreams.length === 0 && tokenFreeStreams.length === 0) {
+      if (token) {
+        const status = yield checkToken(token);
+        if (status.valid === false && status.reason === "bad-token") {
+          console.log("[Aether] The FebBox token is no longer valid \u2014 re-copy the `ui` cookie from febbox.com.");
+        } else if (status.valid === false && status.reason === "unreachable") {
+          console.log("[Aether] No Aether FEM API mirror could be reached.");
+        } else if (status.valid === true) {
+          console.log("[Aether] Token is fine; FEM simply has no stream for this title.");
+        } else {
+          console.log("[Aether] FEM returned nothing playable for this title.");
+        }
       }
       return [];
     }
-    return preferHls ? hlsStreams.concat(mp4Streams) : mp4Streams.concat(hlsStreams);
+    const ordered = preferHls ? hlsStreams.concat(mp4Streams) : mp4Streams.concat(hlsStreams);
+    return ordered.concat(tokenFreeStreams);
   });
 }
 function onSettings() {
@@ -516,7 +606,7 @@ function onSettings() {
         label: "FebBox ui token",
         placeholder: "eyJhbGciOiJIUzI1NiJ9...",
         isPassword: true,
-        description: "Required. The value of the `ui` cookie from febbox.com. Expires periodically \u2014 re-copy it if streams stop working."
+        description: "Optional but recommended. The value of the `ui` cookie from febbox.com. Expires periodically \u2014 re-copy it if streams stop working."
       },
       {
         type: "toggle",
@@ -533,7 +623,7 @@ function onSettings() {
         type: "select",
         key: "region",
         label: "CDN region",
-        description: "Re-points FebBox stream URLs at the edge node nearest you.",
+        description: "Re-points FebBox stream URLs at the edge node nearest you. Only applies to FEM streams.",
         options: [
           { label: "Auto (as returned)", value: "auto" },
           { label: "New York", value: "new-york" },
@@ -548,6 +638,33 @@ function onSettings() {
           { label: "Mumbai", value: "mumbai" }
         ],
         defaultValue: "auto"
+      },
+      {
+        type: "header",
+        label: "Token-free source"
+      },
+      {
+        type: "info",
+        label: "Aether also ships one source that needs no account. It is listed after the FEM streams and is what the site itself plays when no token is set. Streams are HLS with original audio plus Spanish subtitles, or Spanish dubbing."
+      },
+      {
+        type: "toggle",
+        key: "enableSpanish",
+        label: "Include token-free source",
+        description: "Turn off if you only want the token-backed FEM streams.",
+        defaultValue: true
+      },
+      {
+        type: "select",
+        key: "spanishLang",
+        label: "Token-free source audio",
+        description: "Which of Aether's three variants to request.",
+        options: [
+          { label: "Subtitled (ES) \u2014 original audio", value: "sub" },
+          { label: "Castellano \u2014 Spanish dubbing", value: "esp" },
+          { label: "Latino \u2014 Latin American dubbing", value: "lat" }
+        ],
+        defaultValue: "sub"
       }
     ];
   });

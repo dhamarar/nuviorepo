@@ -58,6 +58,37 @@ export const FEM_ENDPOINTS = [
 /** Aether site mirrors, primary first. Used for Origin/Referer fallback. */
 export const AETHER_SITE_DOMAINS = ['aether.st', 'aether.ist', 'aether.mom'];
 
+/**
+ * Aether's built-in **token-free** source.
+ *
+ * Aether ships three variants of a single endpoint — `aether-latino`,
+ * `aether-castellano` and `aether-subtitulado` — all served from here and all
+ * registered with `disabled: false` and `CORS_ALLOWED`. They are what the site
+ * offers before any FebBox token is entered. Read out of Aether's own bundle:
+ *
+ *   GET /movie/:tmdbId?lang=lat|esp|sub
+ *   GET /tv/:tmdbId/:season/:episode?lang=lat|esp|sub
+ *     -> 200, and the playlist is read from the response URL (`response.url`), so the
+ *        endpoint either serves the m3u8 itself or redirects to it. Both cases are
+ *        handled by following redirects and using the final URL.
+ *
+ * There is no aether.ist equivalent of this host, so the list is a one-element array
+ * kept for shape and easy extension.
+ *
+ * Reachability caveat: Cloudflare answers "Sorry, you have been blocked" for this
+ * hostname from datacenter IPs (verified 2026-09-21) even though fembox.aether.cx
+ * answers fine from the same IP, so this source could not be exercised end to end
+ * from the build environment. The request shape is copied from Aether's own code.
+ */
+export const SPANISH_HOSTS = ['https://le.aether.cx'];
+
+/** Aether's three variants, mapped to a readable label. */
+export const SPANISH_LANGS = {
+    sub: 'Subtitled (ES)',
+    esp: 'Castellano',
+    lat: 'Latino'
+};
+
 /** Quality labels FEM API uses, mapped to what Nuvio displays. */
 export const QUALITY_LABELS = {
     ORG: 'ORG',

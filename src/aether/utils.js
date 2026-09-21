@@ -33,6 +33,32 @@ export async function fetchJson(url, headers, timeoutMs = 15000) {
     }
 }
 
+/**
+ * GET a URL and report the URL the request ended on.
+ *
+ * Aether's token-free source does not answer with JSON: it either serves the playlist
+ * at the endpoint itself or redirects to it, and Aether reads the response URL. So we
+ * follow redirects and hand back the final URL, without consuming the body (which may
+ * be an m3u8).
+ */
+export async function fetchFinalUrl(url, headers, timeoutMs = 15000) {
+    let timer = null;
+    try {
+        const response = await Promise.race([
+            fetch(url, { method: 'GET', redirect: 'follow', headers }),
+            new Promise((_, reject) => {
+                timer = setTimeout(() => reject(new Error('Request timed out')), timeoutMs);
+            })
+        ]);
+        const finalUrl = response.url || url;
+        return { ok: response.ok, status: response.status, url: finalUrl };
+    } catch (error) {
+        return { ok: false, status: 0, url, error: error.message };
+    } finally {
+        if (timer) clearTimeout(timer);
+    }
+}
+
 /** FEM API rejects bare requests, so we present the Aether mirror as origin. */
 export function buildFemHeaders(site) {
     return {
@@ -47,6 +73,24 @@ export function buildFemHeaders(site) {
 /** Headers handed to the player for the actual stream URL. */
 export function buildPlaybackHeaders() {
     return { 'User-Agent': USER_AGENT };
+}
+
+/**
+ * Headers for Aether's token-free endpoint, which sits behind Cloudflare.
+ *
+ * Aether's own code sends no headers here, but it runs in a browser that adds
+ * Accept / Accept-Language / Origin / Referer automatically. Reproducing that set
+ * keeps the request looking like the traffic the endpoint expects to serve.
+ */
+export function buildTokenFreeHeaders(site) {
+    const origin = site || 'https://aether.st';
+    return {
+        'Accept': '*/*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Origin': origin,
+        'Referer': origin + '/',
+        'User-Agent': USER_AGENT
+    };
 }
 
 export function languageNameToCode(name) {
