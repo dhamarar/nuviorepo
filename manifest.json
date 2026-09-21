@@ -121,8 +121,8 @@
     {
       "id": "aether",
       "name": "Aether",
-      "description": "Movies and TV shows from Aether's FEM API (FebBox), plus a token-free HLS source. A free FebBox ui token unlocks 4K/1080p MP4 and HLS.",
-      "version": "1.1.0",
+      "description": "Movies and TV shows from Aether's FEM API (FebBox), plus token-free HLS sources (Link, Lul, Spanish). A free FebBox ui token unlocks 4K/1080p MP4 and HLS.",
+      "version": "1.2.0",
       "author": "dhamarar",
       "supportedTypes": [
         "movie",

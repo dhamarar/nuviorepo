@@ -33,8 +33,7 @@ export async function fetchJson(url, headers, timeoutMs = 15000) {
     }
 }
 
-/** FEM API rejects bare requests, so we present the Aether mirror as origin. */
-export function buildFemHeaders(site) {
+/** FEM API rejects bare requests, so we present the Aether mirror as origin. */export function buildFemHeaders(site) {
     return {
         'Accept': 'application/json, text/plain, */*',
         'Accept-Language': 'en-US,en;q=0.9',
@@ -75,6 +74,24 @@ export function buildTokenFreeHeaders(site) {
     };
 }
 
+/**
+ * Headers for the other token-free Aether APIs (tiki / link / lul), which sit behind the
+ * same Cloudflare setup. This exact set was verified to work both for the JSON call and
+ * for fetching the playlist URL it returns, so it is reused as the playback headers.
+ */
+export function buildJsonApiHeaders() {
+    return {
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Origin': 'https://aether.st',
+        'Referer': 'https://aether.st/',
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'cross-site',
+        'User-Agent': USER_AGENT
+    };
+}
+
 export function languageNameToCode(name) {
     if (!name) return null;
     const key = String(name).trim().toLowerCase();
@@ -107,10 +124,36 @@ export function rewriteRegionHost(url, regionCode) {
     }
 }
 
+export async function resolveToTmdbId(rawId, isTv = false) {
+    if (!rawId) return null;
+    let id = String(rawId).trim();
+    if (id.toLowerCase().startsWith('tmdb:')) {
+        return id.replace(/^tmdb:/i, '');
+    }
+    if (/^tt\d+$/i.test(id)) {
+        try {
+            const url = `${TMDB_BASE}/find/${encodeURIComponent(id)}?api_key=${TMDB_API_KEY}&external_source=imdb_id`;
+            const result = await fetchJson(url, { 'User-Agent': USER_AGENT }, 4000);
+            const data = result.data || {};
+            const list = isTv ? (data.tv_results || []) : (data.movie_results || []);
+            if (list.length > 0 && list[0].id) {
+                return String(list[0].id);
+            }
+            const otherList = isTv ? (data.movie_results || []) : (data.tv_results || []);
+            if (otherList.length > 0 && otherList[0].id) {
+                return String(otherList[0].id);
+            }
+        } catch {
+            return id;
+        }
+    }
+    return id;
+}
+
 export function getTmdbMeta(tmdbId, mediaType) {
-    const type = mediaType === 'tv' ? 'tv' : 'movie';
+    const type = (mediaType === 'tv' || mediaType === 'series') ? 'tv' : 'movie';
     const url = `${TMDB_BASE}/${type}/${tmdbId}?api_key=${TMDB_API_KEY}`;
-    return fetchJson(url, { 'User-Agent': USER_AGENT }, 12000)
+    return fetchJson(url, { 'User-Agent': USER_AGENT }, 4000)
         .then(result => {
             const data = result.data || {};
             const releaseDate = data.release_date || data.first_air_date || '';
@@ -126,7 +169,7 @@ export function getTmdbMeta(tmdbId, mediaType) {
 export function getEpisodeMeta(tmdbId, season, episode) {
     if (!tmdbId || !season || !episode) return Promise.resolve(null);
     const url = `${TMDB_BASE}/tv/${tmdbId}/season/${season}/episode/${episode}?api_key=${TMDB_API_KEY}`;
-    return fetchJson(url, { 'User-Agent': USER_AGENT }, 12000)
+    return fetchJson(url, { 'User-Agent': USER_AGENT }, 4000)
         .then(result => {
             const data = result.data || {};
             return {
@@ -135,6 +178,12 @@ export function getEpisodeMeta(tmdbId, season, episode) {
             };
         })
         .catch(() => null);
+}
+
+export function buildCleanTitle(label, quality, format) {
+    const q = (quality && quality !== 'Auto') ? ` [${quality}]` : '';
+    const f = format ? ` (${format.toUpperCase()})` : '';
+    return `${PROVIDER_NAME} - ${label}${q}${f}`;
 }
 
 /** Nuvio shows `title` (and mirrors it into size/description) in the stream list. */

@@ -1,5 +1,6 @@
 import { PROVIDER_NAME, QUALITY_RANK, REGION_MAP, SPANISH_LANGS } from './constants.js';
 import { FemError, checkToken, fetchHlsPayload, fetchMp4Payload } from './femapi.js';
+import { fetchExtraSources } from './extras.js';
 import { fetchSpanishPlaylist } from './spanish.js';
 import {
     buildPlaybackHeaders,
@@ -11,6 +12,7 @@ import {
     languageDisplayName,
     languageNameToCode,
     normalizeQuality,
+    resolveToTmdbId,
     rewriteRegionHost
 } from './utils.js';
 
@@ -25,8 +27,9 @@ function readSettings() {
         regionCode: REGION_MAP[regionKey] || '',
         preferHls: settings.preferHls === true,
         spanishLang,
-        // Default on: this is the only source that works before a token is set.
-        enableSpanish: settings.enableSpanish !== false
+        // Default on: these are the only sources that work before a token is set.
+        enableSpanish: settings.enableSpanish !== false,
+        enableExtraSources: settings.enableExtraSources !== false
     };
 }
 
@@ -56,8 +59,6 @@ function buildMp4Streams(payload, meta, epMeta, season, episode, regionCode, hea
             return {
                 name: `${PROVIDER_NAME} | ${quality}`,
                 title,
-                size: title,
-                description: title,
                 url: rewriteRegionHost(source.url, regionCode),
                 quality,
                 format: 'mp4',
@@ -79,13 +80,28 @@ function buildHlsStream(payload, meta, epMeta, season, episode, regionCode, head
     return {
         name: `${PROVIDER_NAME} | HLS`,
         title,
-        size: title,
-        description: title,
         url: rewriteRegionHost(payload.hls, regionCode),
         quality,
         format: 'm3u8',
         headers,
         subtitles,
+        provider: 'aether'
+    };
+}
+
+function buildExtraStream(entry, meta, epMeta, season, episode) {
+    const label = entry.source.label;
+    const title = `${buildStreamTitle(meta, epMeta, 'Auto', 'HLS', season, episode, '')}\n🔓 Token-free · ${label}`;
+
+    return {
+        name: `${PROVIDER_NAME} | ${label}`,
+        title,
+        url: entry.url,
+        quality: 'Auto',
+        format: 'm3u8',
+        // Verified: the playlist loads with the same headers the API call needed.
+        headers: entry.headers,
+        subtitles: [],
         provider: 'aether'
     };
 }
@@ -97,8 +113,6 @@ function buildSpanishStream(playlist, meta, epMeta, season, episode) {
     return {
         name: `${PROVIDER_NAME} | ${label}`,
         title,
-        size: title,
-        description: title,
         url: playlist.url,
         quality: 'Auto',
         format: 'm3u8',
@@ -124,54 +138,88 @@ function logFailure(kind, error) {
 }
 
 async function getStreams(tmdbId, mediaType, season, episode) {
-    const { token, regionCode, preferHls, spanishLang, enableSpanish } = readSettings();
+    const { token, regionCode, preferHls, spanishLang, enableSpanish, enableExtraSources } = readSettings();
 
     const headers = buildPlaybackHeaders();
 
-    const metadata = await Promise.all([
-        getTmdbMeta(tmdbId, mediaType),
-        mediaType === 'tv' ? getEpisodeMeta(tmdbId, season, episode) : Promise.resolve(null)
+    const isTv = mediaType === 'tv' || mediaType === 'series' || mediaType === 'anime' || (season != null && episode != null);
+    const normType = isTv ? 'tv' : 'movie';
+    const normSeason = isTv ? (Number(season) || 1) : null;
+    const normEpisode = isTv ? (Number(episode) || 1) : null;
+
+    // Normalize tmdbId (resolves IMDb 'tt...' to TMDB ID if needed)
+    const normTmdbId = await resolveToTmdbId(tmdbId, isTv);
+    if (!normTmdbId) return [];
+
+    // Query stream sources and metadata concurrently
+    const metadataPromise = Promise.all([
+        getTmdbMeta(normTmdbId, normType),
+        isTv ? getEpisodeMeta(normTmdbId, normSeason, normEpisode) : Promise.resolve(null)
+    ]).catch(() => [null, null]);
+
+    const extrasPromise = enableExtraSources
+        ? fetchExtraSources(normTmdbId, normType, normSeason, normEpisode).catch(() => [])
+        : Promise.resolve([]);
+
+    const spanishPromise = enableSpanish
+        ? fetchSpanishPlaylist(normTmdbId, normType, normSeason, normEpisode, spanishLang).catch(err => {
+            console.log(`[Aether] Token-free source unavailable: ${err.message}`);
+            return null;
+        })
+        : Promise.resolve(null);
+
+    const mp4Promise = token
+        ? fetchMp4Payload(normTmdbId, normType, normSeason, normEpisode, token).catch(err => {
+            logFailure('MP4', err);
+            return null;
+        })
+        : Promise.resolve(null);
+
+    const hlsPromise = token
+        ? fetchHlsPayload(normTmdbId, normType, normSeason, normEpisode, token).catch(err => {
+            logFailure('HLS', err);
+            return null;
+        })
+        : Promise.resolve(null);
+
+    const [metadata, extraFound, spanishPlaylist, mp4Payload, hlsPayload] = await Promise.all([
+        metadataPromise,
+        extrasPromise,
+        spanishPromise,
+        mp4Promise,
+        hlsPromise
     ]);
-    const meta = metadata[0];
-    const epMeta = metadata[1];
+
+    const meta = metadata ? metadata[0] : null;
+    const epMeta = metadata ? metadata[1] : null;
 
     const mp4Streams = [];
     const hlsStreams = [];
+    const extraStreams = [];
     const tokenFreeStreams = [];
 
-    if (token) {
-        try {
-            const mp4 = await fetchMp4Payload(tmdbId, mediaType, season, episode, token);
-            const built = buildMp4Streams(mp4, meta, epMeta, season, episode, regionCode, headers);
-            mp4Streams.push(...built);
-            console.log(`[Aether] FEM MP4 via ${mp4.endpoint.api}: ${built.length} stream(s)`);
-        } catch (error) {
-            logFailure('MP4', error);
-        }
-
-        try {
-            const hls = await fetchHlsPayload(tmdbId, mediaType, season, episode, token);
-            hlsStreams.push(buildHlsStream(hls, meta, epMeta, season, episode, regionCode, headers));
-            console.log(`[Aether] FEM HLS via ${hls.endpoint.api}: ok`);
-        } catch (error) {
-            logFailure('HLS', error);
-        }
-    } else {
-        console.log('[Aether] No FebBox token set, so the FEM API is skipped.');
-        console.log('[Aether] Add one under Aether settings for 4K/1080p MP4 + HLS (free febbox.com account, 100 GB/month).');
+    if (mp4Payload) {
+        const built = buildMp4Streams(mp4Payload, meta, epMeta, normSeason, normEpisode, regionCode, headers);
+        mp4Streams.push(...built);
+        console.log(`[Aether] FEM MP4 via ${mp4Payload.endpoint.api}: ${built.length} stream(s)`);
     }
 
-    if (enableSpanish) {
-        try {
-            const playlist = await fetchSpanishPlaylist(tmdbId, mediaType, season, episode, spanishLang);
-            tokenFreeStreams.push(buildSpanishStream(playlist, meta, epMeta, season, episode));
-            console.log(`[Aether] Token-free source via ${playlist.host}: ok (${playlist.label}, server=${playlist.server || 'n/a'})`);
-        } catch (error) {
-            console.log(`[Aether] Token-free source unavailable: ${error.message}`);
-        }
+    if (hlsPayload) {
+        hlsStreams.push(buildHlsStream(hlsPayload, meta, epMeta, normSeason, normEpisode, regionCode, headers));
+        console.log(`[Aether] FEM HLS via ${hlsPayload.endpoint.api}: ok`);
     }
 
-    if (mp4Streams.length === 0 && hlsStreams.length === 0 && tokenFreeStreams.length === 0) {
+    if (extraFound && extraFound.length > 0) {
+        extraFound.forEach(entry => extraStreams.push(buildExtraStream(entry, meta, epMeta, normSeason, normEpisode)));
+        console.log(`[Aether] Token-free extras: ${extraFound.map(entry => entry.source.label).join(', ')}`);
+    }
+
+    if (spanishPlaylist) {
+        tokenFreeStreams.push(buildSpanishStream(spanishPlaylist, meta, epMeta, normSeason, normEpisode));
+        console.log(`[Aether] Token-free source via ${spanishPlaylist.host}: ok (${spanishPlaylist.label}, server=${spanishPlaylist.server || 'n/a'})`);
+    }
+
+    if (mp4Streams.length === 0 && hlsStreams.length === 0 && extraStreams.length === 0 && tokenFreeStreams.length === 0) {
         if (token) {
             // A dead token looks exactly like a title FebBox does not carry, so ask the
             // quota endpoint which one it is before telling the user anything.
@@ -190,7 +238,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     }
 
     const ordered = preferHls ? hlsStreams.concat(mp4Streams) : mp4Streams.concat(hlsStreams);
-    return ordered.concat(tokenFreeStreams);
+    return ordered.concat(extraStreams).concat(tokenFreeStreams);
 }
 
 async function onSettings() {
@@ -244,17 +292,24 @@ async function onSettings() {
         },
         {
             type: 'header',
-            label: 'Token-free source'
+            label: 'Token-free sources'
         },
         {
             type: 'info',
-            label: 'Aether also ships one source that needs no account. It is listed after the FEM streams and is what the site itself plays when no token is set. Streams are HLS with original audio plus Spanish subtitles, or Spanish dubbing.'
+            label: 'Aether runs several sources that need no account. They are listed after the FEM streams and are what the site itself plays when no token is set. Link and Lul are language-agnostic HLS; the Spanish source is HLS with original audio plus Spanish subtitles, or Spanish dubbing.'
+        },
+        {
+            type: 'toggle',
+            key: 'enableExtraSources',
+            label: 'Include Link / Lul',
+            description: 'Two token-free sources queried together. Every one that carries the title is listed, so you can pick.',
+            defaultValue: true
         },
         {
             type: 'toggle',
             key: 'enableSpanish',
-            label: 'Include token-free source',
-            description: 'Turn off if you only want the token-backed FEM streams.',
+            label: 'Include the Spanish source',
+            description: 'Turn off if you only want English-friendly streams.',
             defaultValue: true
         },
         {

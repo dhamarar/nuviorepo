@@ -124,6 +124,43 @@ export const SPANISH_LANG_ORDER = ['sub', 'esp', 'lat'];
 /** Cap on language attempts per host, so a misbehaving service cannot loop us. */
 export const MAX_LANG_ATTEMPTS = 3;
 
+/**
+ * Further token-free sources Aether runs, found by enumerating every host referenced in
+ * its deobfuscated provider bundle (the hostnames are split across concatenated string
+ * fragments, so the fragments have to be joined before they are readable).
+ *
+ * All share one contract, verified live 2026-09-21:
+ *
+ *   GET /movie/:tmdbId
+ *   GET /tv/:tmdbId/:season/:episode
+ *     -> 200 {"stream":"<playlist url>"}     (link also returns id/title)
+ *     -> 404 when the title is not carried
+ *
+ * IMPORTANT — the API call and playback need *different* headers:
+ *   - the JSON call needs the browser-ish set (Referer + Sec-Fetch-*) to pass Cloudflare
+ *     on <source>.aether.cx;
+ *   - the playlist and its segments must be fetched with the **minimal** set (just a
+ *     User-Agent). Sending a Referer makes link's CDN answer 403 — hotlink protection —
+ *     while the same URL returns 200 and real MPEG-TS without it.
+ * Both were only found by walking master -> variant -> segment; checking the playlist
+ * alone looks healthy and hides the 403 entirely.
+ *
+ * Measured coverage over 18 popular titles: link answered for 18/18, lul for 10/18.
+ *
+ * Deliberately excluded, each verified rather than assumed:
+ *   - `tiki` — playlist loads but its delivery host (vip.1x2.space) answers 403 to every
+ *     header profile tried, so it can never play.
+ *   - `meridian` — 200 with a stream URL and a multilingual subtitle list, but its
+ *     delivery host (cdn.neuronix.sbs) 403s on every profile.
+ *   - `nebula` / `vine` / `baguette` — answer, but report no match for the titles tested.
+ *   - `easy` / `fast` / `vidy` — down (530 / 502).
+ *   - every `*.aether.mom` host — NXDOMAIN.
+ */
+export const EXTRA_SOURCES = [
+    { id: 'link', host: 'https://link.aether.cx', label: 'Link' },
+    { id: 'lul', host: 'https://lul.aether.cx', label: 'Lul' }
+];
+
 /** Quality labels FEM API uses, mapped to what Nuvio displays. */
 export const QUALITY_LABELS = {
     ORG: 'ORG',
