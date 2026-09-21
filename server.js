@@ -8,8 +8,10 @@ const PORT = 3000;
 function getLocalIp() {
     const interfaces = os.networkInterfaces();
     for (const name of Object.keys(interfaces)) {
-        for (const iface of interfaces[name]) {
-            if (iface.family === 'IPv4' && !iface.internal) {
+        // os.networkInterfaces() can return null for an interface, so guard the iteration
+        // and each entry; otherwise this throws before the server ever listens.
+        for (const iface of (interfaces[name] || [])) {
+            if (iface && iface.family === 'IPv4' && !iface.internal) {
                 return iface.address;
             }
         }
@@ -40,11 +42,20 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    // Prepare file path
-    let filePath = path.join(__dirname, req.url === '/' ? 'index.html' : req.url);
+    // Strip the query string: the app appends cache-busting params (?v=123), and without
+    // this the lookup would ask for a file literally named "manifest.json?v=123".
+    const requestPath = (req.url === '/' ? 'index.html' : req.url.split('?')[0]);
 
-    // Security check: prevent directory traversal
-    if (!filePath.startsWith(__dirname)) {
+    // Resolve against the repo root and then verify containment with path.relative, rather
+    // than a startsWith prefix check — which would also accept a sibling directory whose
+    // name merely begins with the same characters (e.g. "...\nuviorepo-evil").
+    const filePath = path.resolve(__dirname, '.' + path.posix.normalize(requestPath));
+    const relative = path.relative(__dirname, filePath);
+
+    // Security check: prevent directory traversal. Compare against the ".." segment itself
+    // or ".." followed by a separator, so a file whose name merely begins with dots is not
+    // rejected by mistake.
+    if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) {
         res.writeHead(403);
         res.end('Forbidden');
         return;
