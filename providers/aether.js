@@ -1,6 +1,6 @@
 /**
  * aether - Built from src/aether/
- * Generated: 2026-09-21T07:39:08.985Z
+ * Generated: 2026-09-21T07:43:01.554Z
  */
 var __async = (__this, __arguments, generator) => {
   return new Promise((resolve, reject) => {
@@ -399,6 +399,15 @@ function checkToken(token) {
 }
 
 // src/aether/spanish.js
+function requestLang(url) {
+  return __async(this, null, function* () {
+    let result = yield fetchJson(url, buildTokenFreeHeaders("https://aether.st"));
+    if (result.status >= 500) {
+      result = yield fetchJson(url, buildTokenFreeHeaders("https://aether.st"));
+    }
+    return result;
+  });
+}
 function fetchSpanishPlaylist(tmdbId, mediaType, season, episode, lang) {
   return __async(this, null, function* () {
     const path = mediaType === "tv" ? `/tv/${tmdbId}/${season}/${episode}` : `/movie/${tmdbId}`;
@@ -414,7 +423,7 @@ function fetchSpanishPlaylist(tmdbId, mediaType, season, episode, lang) {
         tried[candidate] = true;
         used += 1;
         const url = `${host}${path}?lang=${encodeURIComponent(candidate)}`;
-        const result = yield fetchJson(url, buildTokenFreeHeaders("https://aether.st"));
+        const result = yield requestLang(url);
         const body = result.data || {};
         if (result.ok && body.url) {
           return {
@@ -429,7 +438,7 @@ function fetchSpanishPlaylist(tmdbId, mediaType, season, episode, lang) {
         const reason = body.error || `HTTP ${result.status}`;
         attempts.push(`${host} lang=${candidate} -> ${reason}`);
         if (body.error === "lang_not_available") {
-          queue = (body.available || []).map((entry) => String(entry).toLowerCase()).filter((entry) => !!SPANISH_LANGS[entry] && !tried[entry]);
+          queue = (body.available || []).map((entry) => String(entry).toLowerCase()).filter((entry) => !!SPANISH_LANGS[entry] && !tried[entry]).sort((a, b) => SPANISH_LANG_ORDER.indexOf(a) - SPANISH_LANG_ORDER.indexOf(b));
         } else if (body.error === "tmdb_not_found") {
           throw new Error(`Aether token-free source has no stream for this title (${reason})`);
         }
