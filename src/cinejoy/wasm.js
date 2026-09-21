@@ -136,8 +136,14 @@ export async function sealWithApi(serverInfo) {
 }
 
 export async function seal(path, payloadJson, serverInfo) {
-    // 1. Try local WebAssembly if available
-    if (typeof WebAssembly !== 'undefined' && typeof WebAssembly.instantiate === 'function') {
+    // Detect QuickJS (Nuvio), Hermes (React Native), or placeholder WebAssembly
+    const isMockRuntime = typeof __native_fetch !== 'undefined' ||
+        typeof HermesInternal !== 'undefined' ||
+        (typeof WebAssembly !== 'undefined' && typeof WebAssembly.instantiate === 'function' &&
+         (WebAssembly.instantiate.toString().includes('placeholder') || WebAssembly.instantiate.name === ''));
+
+    // 1. Try local WebAssembly only in environments with real WASM support (Node.js, Chromium, full V8)
+    if (!isMockRuntime && typeof WebAssembly !== 'undefined' && typeof WebAssembly.instantiate === 'function') {
         try {
             return await sealWithWasm(path, payloadJson);
         } catch (wasmErr) {
@@ -145,7 +151,7 @@ export async function seal(path, payloadJson, serverInfo) {
         }
     }
 
-    // 2. Fallback to enc-dec API (for Hermes in React Native)
+    // 2. Fallback to enc-dec API
     if (serverInfo) {
         return await sealWithApi(serverInfo);
     }

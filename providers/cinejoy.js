@@ -1,6 +1,6 @@
 /**
  * cinejoy - Built from src/cinejoy/
- * Generated: 2026-09-21T02:07:44.600Z
+ * Generated: 2026-09-21T02:28:34.651Z
  */
 var __defProp = Object.defineProperty;
 var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
@@ -951,7 +951,8 @@ function sealWithApi(serverInfo) {
 }
 function seal(path, payloadJson, serverInfo) {
   return __async(this, null, function* () {
-    if (typeof WebAssembly !== "undefined" && typeof WebAssembly.instantiate === "function") {
+    const isMockRuntime = typeof __native_fetch !== "undefined" || typeof HermesInternal !== "undefined" || typeof WebAssembly !== "undefined" && typeof WebAssembly.instantiate === "function" && (WebAssembly.instantiate.toString().includes("placeholder") || WebAssembly.instantiate.name === "");
+    if (!isMockRuntime && typeof WebAssembly !== "undefined" && typeof WebAssembly.instantiate === "function") {
       try {
         return yield sealWithWasm(path, payloadJson);
       } catch (wasmErr) {
@@ -966,6 +967,20 @@ function seal(path, payloadJson, serverInfo) {
 }
 
 // src/cinejoy/index.js
+function onSettings() {
+  return __async(this, null, function* () {
+    return [
+      { type: "header", label: "Cinejoy Configuration" },
+      {
+        type: "text",
+        key: "resolverUrl",
+        label: "Custom Resolver URL (Optional)",
+        placeholder: "https://your-cinejoy-worker.workers.dev",
+        description: "Dedicated Cloudflare Worker / API endpoint for environments without raw binary HTTP support."
+      }
+    ];
+  });
+}
 function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
   return __async(this, null, function* () {
     let id = tmdbId;
@@ -989,6 +1004,8 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
     const cleanEpisode = Number(ep) || 1;
     console.log(`[Cinejoy] Fetching streams for TMDB: ${cleanTmdb}, Type: ${isTv ? "tv" : "movie"}, S: ${cleanSeason}, E: ${cleanEpisode}`);
     const streams = [];
+    const settings = globalThis.SCRAPER_SETTINGS || {};
+    const customResolver = (settings.resolverUrl || "").trim().replace(/\/+$/, "");
     try {
       const domainPromise = resolveDomain();
       const tmdbInfoPromise = getTmdbDetails(cleanTmdb, isTv ? "tv" : "movie");
@@ -1003,9 +1020,42 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
         "User-Agent": HEADERS["User-Agent"]
       };
       const serverPromises = servers.map((server) => __async(this, null, function* () {
-        var _a;
+        var _a, _b;
         try {
           const serverDisplayName = server.charAt(0).toUpperCase() + server.slice(1);
+          if (customResolver) {
+            try {
+              const targetUrl = `${customResolver}/api/stream?tmdb=${cleanTmdb}&type=${isTv ? "series" : "movie"}&server=${encodeURIComponent(server)}&season=${cleanSeason}&episode=${cleanEpisode}`;
+              const rRes = yield fetch(targetUrl, {
+                headers: { "User-Agent": HEADERS["User-Agent"] }
+              });
+              if (rRes.ok) {
+                const rJson = yield rRes.json();
+                const rStreams = ((_a = rJson == null ? void 0 : rJson.data) == null ? void 0 : _a.stream) || (rJson == null ? void 0 : rJson.streams) || [];
+                if (Array.isArray(rStreams) && rStreams.length > 0) {
+                  return rStreams.map((item) => {
+                    if (item.type === "hls" && item.playlist) {
+                      return {
+                        name: "Cinejoy",
+                        title: `Cinejoy - ${serverDisplayName} (HLS)`,
+                        url: item.playlist,
+                        quality: "1080p",
+                        headers: streamHeaders,
+                        subtitles: (item.captions || []).map((c) => ({
+                          url: c.url,
+                          language: (c.language || c.id || "en").toLowerCase(),
+                          name: c.language || c.id || "Subtitle"
+                        })).filter((s2) => !!s2.url)
+                      };
+                    }
+                    return null;
+                  }).filter(Boolean);
+                }
+              }
+            } catch (resolverErr) {
+              console.warn(`[Cinejoy] Custom resolver error for ${server}:`, resolverErr.message);
+            }
+          }
           const path = `/${server.toLowerCase()}/${isTv ? "series" : "movie"}`;
           const payloadObj = isTv ? { tmdb: cleanTmdb, season: String(cleanSeason), episode: String(cleanEpisode) } : { tmdb: cleanTmdb };
           const serverInfo = {
@@ -1030,13 +1080,23 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
             }
           });
           if (!res.ok) {
+            console.warn(`[Cinejoy] [${server}] HTTP ${res.status}: Gateway rejected request (Nuvio QuickJS fetch sends string bodies; binary octets cannot round-trip natively)`);
             return null;
           }
-          const arrayBuf = yield res.arrayBuffer();
-          const encBytes = new Uint8Array(arrayBuf);
+          let encBytes;
+          if (typeof res.arrayBuffer === "function") {
+            const arrayBuf = yield res.arrayBuffer();
+            encBytes = new Uint8Array(arrayBuf);
+          } else {
+            const text = yield res.text();
+            encBytes = new Uint8Array(text.length);
+            for (let i = 0; i < text.length; i++) {
+              encBytes[i] = text.charCodeAt(i) & 255;
+            }
+          }
           const decryptedStr = yield decrypt(encBytes, sealed);
           const json = JSON.parse(decryptedStr);
-          const streamArr = ((_a = json.data) == null ? void 0 : _a.stream) || [];
+          const streamArr = ((_b = json.data) == null ? void 0 : _b.stream) || [];
           const serverStreams = [];
           for (const item of streamArr) {
             const type2 = item.type;
@@ -1103,7 +1163,7 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
     return streams;
   });
 }
-module.exports = { getStreams };
+module.exports = { getStreams, onSettings };
 /*! Bundled license information:
 
 @noble/ciphers/utils.js:

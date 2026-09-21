@@ -51,7 +51,7 @@
       "id": "cinejoy",
       "name": "Cinejoy",
       "description": "Cinejoy streaming provider with multi-server support and multi-language subtitles",
-      "version": "2.0.0",
+      "version": "2.1.0",
       "author": "Nuvio Team",
       "supportedTypes": [
         "movie",
@@ -59,6 +59,7 @@
       ],
       "filename": "providers/cinejoy.js",
       "enabled": true,
+      "hasSettings": true,
       "formats": [
         "m3u8",
         "mp4"

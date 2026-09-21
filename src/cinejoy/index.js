@@ -3,6 +3,19 @@ import { seal } from './wasm.js';
 import { decrypt } from './crypto.js';
 import { HEADERS } from './constants.js';
 
+async function onSettings() {
+    return [
+        { type: "header", label: "Cinejoy Configuration" },
+        {
+            type: "text",
+            key: "resolverUrl",
+            label: "Custom Resolver URL (Optional)",
+            placeholder: "https://your-cinejoy-worker.workers.dev",
+            description: "Dedicated Cloudflare Worker / API endpoint for environments without raw binary HTTP support."
+        }
+    ];
+}
+
 async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
     let id = tmdbId;
     let type = mediaType;
@@ -31,6 +44,9 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
     console.log(`[Cinejoy] Fetching streams for TMDB: ${cleanTmdb}, Type: ${isTv ? "tv" : "movie"}, S: ${cleanSeason}, E: ${cleanEpisode}`);
     const streams = [];
 
+    const settings = globalThis.SCRAPER_SETTINGS || {};
+    const customResolver = (settings.resolverUrl || "").trim().replace(/\/+$/, '');
+
     try {
         // Step 1: Resolve domain and fetch TMDB info concurrently
         const domainPromise = resolveDomain();
@@ -57,6 +73,43 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
         const serverPromises = servers.map(async (server) => {
             try {
                 const serverDisplayName = server.charAt(0).toUpperCase() + server.slice(1);
+
+                // Option A: If custom resolver is configured, fetch directly from resolver
+                if (customResolver) {
+                    try {
+                        const targetUrl = `${customResolver}/api/stream?tmdb=${cleanTmdb}&type=${isTv ? 'series' : 'movie'}&server=${encodeURIComponent(server)}&season=${cleanSeason}&episode=${cleanEpisode}`;
+                        const rRes = await fetch(targetUrl, {
+                            headers: { "User-Agent": HEADERS["User-Agent"] }
+                        });
+                        if (rRes.ok) {
+                            const rJson = await rRes.json();
+                            const rStreams = rJson?.data?.stream || rJson?.streams || [];
+                            if (Array.isArray(rStreams) && rStreams.length > 0) {
+                                return rStreams.map(item => {
+                                    if (item.type === 'hls' && item.playlist) {
+                                        return {
+                                            name: "Cinejoy",
+                                            title: `Cinejoy - ${serverDisplayName} (HLS)`,
+                                            url: item.playlist,
+                                            quality: "1080p",
+                                            headers: streamHeaders,
+                                            subtitles: (item.captions || []).map(c => ({
+                                                url: c.url,
+                                                language: (c.language || c.id || "en").toLowerCase(),
+                                                name: c.language || c.id || "Subtitle"
+                                            })).filter(s => !!s.url)
+                                        };
+                                    }
+                                    return null;
+                                }).filter(Boolean);
+                            }
+                        }
+                    } catch (resolverErr) {
+                        console.warn(`[Cinejoy] Custom resolver error for ${server}:`, resolverErr.message);
+                    }
+                }
+
+                // Option B: Direct gateway request
                 const path = `/${server.toLowerCase()}/${isTv ? "series" : "movie"}`;
                 const payloadObj = isTv
                     ? { tmdb: cleanTmdb, season: String(cleanSeason), episode: String(cleanEpisode) }
@@ -87,11 +140,22 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
                 });
 
                 if (!res.ok) {
+                    console.warn(`[Cinejoy] [${server}] HTTP ${res.status}: Gateway rejected request (Nuvio QuickJS fetch sends string bodies; binary octets cannot round-trip natively)`);
                     return null;
                 }
 
-                const arrayBuf = await res.arrayBuffer();
-                const encBytes = new Uint8Array(arrayBuf);
+                let encBytes;
+                if (typeof res.arrayBuffer === 'function') {
+                    const arrayBuf = await res.arrayBuffer();
+                    encBytes = new Uint8Array(arrayBuf);
+                } else {
+                    const text = await res.text();
+                    encBytes = new Uint8Array(text.length);
+                    for (let i = 0; i < text.length; i++) {
+                        encBytes[i] = text.charCodeAt(i) & 0xFF;
+                    }
+                }
+
                 const decryptedStr = await decrypt(encBytes, sealed);
                 const json = JSON.parse(decryptedStr);
 
@@ -171,4 +235,4 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
     return streams;
 }
 
-module.exports = { getStreams };
+module.exports = { getStreams, onSettings };
