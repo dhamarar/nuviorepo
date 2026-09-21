@@ -33,4 +33,11 @@ Dengan Worker ini, proses enkripsi dan request biner dilakukan di Cloudflare Wor
 2. Masuk ke **Settings** -> **Plugins / Providers** -> **Cinejoy**.
 3. Masukkan URL worker Anda pada kolom **Custom Resolver URL**:
    `https://cinejoy-resolver.<username>.workers.dev`
-4. Klik Simpan. Selesai! Sumber stream Cinejoy (HLS 1080p, dll.) kini akan muncul secara lengkap saat Anda memutar film/serial apa pun di Nuvio.
+4. Klik Simpan. Selesai! Sumber stream Cinejoy dengan berbagai pilihan resolusi (**4K / 2160p**, **1080p**, **720p**, **360p**, dan **Auto**) beserta audio sinkron kini akan muncul secara lengkap saat Anda memutar film/serial di Nuvio.
+
+---
+
+## Fitur Utama Worker v2.2.0:
+- **Multi-Resolution Parsing**: Secara dinamis mengekstrak stream 4K (HEVC/2160p), 1080p, 720p, 360p, serta Auto (Adaptive).
+- **Audio-Preserved Playlists (`/api/playlist`)**: Cinejoy menggunakan audio demuxed fMP4 (`#EXT-X-MEDIA:TYPE=AUDIO`). Endpoint ini meracik master playlist khusus untuk resolusi target tanpa memutus trek audio, sehingga pemutar ExoPlayer di Nuvio memutar video resolusi spesifik dengan suara lengkap.
+- **Zero Dependencies**: 100% menggunakan Web Standard API (`WebCrypto`, `fetch`, `TextDecoder`) tanpa dependensi npm tambahan.

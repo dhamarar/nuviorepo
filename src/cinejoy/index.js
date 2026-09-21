@@ -3,6 +3,58 @@ import { seal } from './wasm.js';
 import { decrypt } from './crypto.js';
 import { HEADERS } from './constants.js';
 
+function parseHlsVariants(masterText, baseUrl) {
+    const lines = masterText.split("\n");
+    const variants = [];
+    let currentInf = null;
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (line.startsWith("#EXT-X-STREAM-INF:")) {
+            const resMatch = line.match(/RESOLUTION=(\d+)x(\d+)/i);
+            const bwMatch = line.match(/BANDWIDTH=(\d+)/i);
+            currentInf = {
+                width: resMatch ? parseInt(resMatch[1], 10) : 0,
+                height: resMatch ? parseInt(resMatch[2], 10) : 0,
+                bandwidth: bwMatch ? parseInt(bwMatch[1], 10) : 0
+            };
+        } else if (line && !line.startsWith("#") && currentInf) {
+            let streamUrl = line;
+            if (!streamUrl.startsWith("http")) {
+                streamUrl = new URL(streamUrl, baseUrl).toString();
+            }
+            variants.push({
+                ...currentInf,
+                url: streamUrl
+            });
+            currentInf = null;
+        }
+    }
+    return variants;
+}
+
+function getQualityBadge(height) {
+    const h = Number(height) || 0;
+    if (h >= 2160) return "4K";
+    if (h >= 1440) return "1440p";
+    if (h >= 1080) return "1080p";
+    if (h >= 720) return "720p";
+    if (h >= 480) return "480p";
+    if (h >= 360) return "360p";
+    return h ? `${h}p` : "Auto";
+}
+
+function normalizeQuality(qKey) {
+    const s = String(qKey || "").toLowerCase();
+    if (s.includes('2160') || s.includes('4k')) return "4K";
+    if (s.includes('1440') || s.includes('2k')) return "1440p";
+    if (s.includes('1080') || s.includes('fhd')) return "1080p";
+    if (s.includes('720') || s.includes('hd')) return "720p";
+    if (s.includes('480') || s.includes('sd')) return "480p";
+    if (s.includes('360')) return "360p";
+    return getQualityBadge(parseInt(s, 10));
+}
+
 async function onSettings() {
     return [
         { type: "header", label: "Cinejoy Configuration" },
@@ -83,26 +135,53 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
                         });
                         if (rRes.ok) {
                             const rJson = await rRes.json();
-                            const rStreams = rJson?.data?.stream || rJson?.streams || [];
-                            if (Array.isArray(rStreams) && rStreams.length > 0) {
-                                return rStreams.map(item => {
-                                    if (item.type === 'hls' && item.playlist) {
-                                        return {
-                                            name: "Cinejoy",
-                                            title: `Cinejoy - ${serverDisplayName} (HLS)`,
-                                            url: item.playlist,
-                                            quality: "1080p",
-                                            headers: streamHeaders,
-                                            subtitles: (item.captions || []).map(c => ({
-                                                url: c.url,
-                                                language: (c.language || c.id || "en").toLowerCase(),
-                                                name: c.language || c.id || "Subtitle"
-                                            })).filter(s => !!s.url)
-                                        };
-                                    }
-                                    return null;
-                                }).filter(Boolean);
+                            // If resolver returns pre-extracted multi-quality streams
+                            if (Array.isArray(rJson?.streams) && rJson.streams.length > 0) {
+                                return rJson.streams;
                             }
+
+                            // Otherwise parse stream list
+                            const rRawStreams = rJson?.data?.stream || [];
+                            const parsedFromResolver = [];
+                            for (const item of rRawStreams) {
+                                const sSubs = (item.captions || []).map(c => ({
+                                    url: c.url,
+                                    language: (c.language || c.id || "en").toLowerCase(),
+                                    name: c.language || c.id || "Subtitle"
+                                })).filter(s => !!s.url);
+
+                                if (item.type === 'hls' && item.playlist) {
+                                    try {
+                                        const m3u8Res = await fetch(item.playlist, { headers: streamHeaders });
+                                        if (m3u8Res.ok) {
+                                            const m3u8Text = await m3u8Res.text();
+                                            const variants = parseHlsVariants(m3u8Text, item.playlist);
+                                            for (const v of variants) {
+                                                const badge = getQualityBadge(v.height);
+                                                const label = badge === "4K" ? "4K (2160p)" : `${v.height}p`;
+                                                parsedFromResolver.push({
+                                                    name: "Cinejoy",
+                                                    title: `Cinejoy - ${serverDisplayName} - ${label}`,
+                                                    url: `${customResolver}/api/playlist?url=${encodeURIComponent(item.playlist)}&height=${v.height}`,
+                                                    quality: badge,
+                                                    headers: streamHeaders,
+                                                    subtitles: sSubs
+                                                });
+                                            }
+                                        }
+                                    } catch (e) {}
+
+                                    parsedFromResolver.push({
+                                        name: "Cinejoy",
+                                        title: `Cinejoy - ${serverDisplayName} - Auto (Adaptive)`,
+                                        url: item.playlist,
+                                        quality: "Auto",
+                                        headers: streamHeaders,
+                                        subtitles: sSubs
+                                    });
+                                }
+                            }
+                            if (parsedFromResolver.length > 0) return parsedFromResolver;
                         }
                     } catch (resolverErr) {
                         console.warn(`[Cinejoy] Custom resolver error for ${server}:`, resolverErr.message);
@@ -174,11 +253,37 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
                     })).filter(s => !!s.url);
 
                     if (type === "hls" && playlist) {
+                        try {
+                            const m3u8Res = await fetch(playlist, { headers: streamHeaders });
+                            if (m3u8Res.ok) {
+                                const m3u8Text = await m3u8Res.text();
+                                const variants = parseHlsVariants(m3u8Text, playlist);
+
+                                for (const v of variants) {
+                                    const badge = getQualityBadge(v.height);
+                                    const label = badge === "4K" ? "4K (2160p)" : `${v.height}p`;
+                                    serverStreams.push({
+                                        name: "Cinejoy",
+                                        title: `Cinejoy - ${serverDisplayName} - ${label}`,
+                                        url: customResolver
+                                            ? `${customResolver}/api/playlist?url=${encodeURIComponent(playlist)}&height=${v.height}`
+                                            : v.url,
+                                        quality: badge,
+                                        headers: streamHeaders,
+                                        subtitles: serverSubs
+                                    });
+                                }
+                            }
+                        } catch (mErr) {
+                            console.warn(`[Cinejoy] Failed to parse HLS variants for ${server}:`, mErr.message);
+                        }
+
+                        // Always include Auto / Master playlist
                         serverStreams.push({
                             name: "Cinejoy",
-                            title: `Cinejoy - ${serverDisplayName} (HLS)`,
+                            title: `Cinejoy - ${serverDisplayName} - Auto (Adaptive)`,
                             url: playlist,
-                            quality: "1080p",
+                            quality: "Auto",
                             headers: streamHeaders,
                             subtitles: serverSubs
                         });
@@ -188,11 +293,12 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
                             const qObj = qualities[qKey];
                             const fileUrl = qObj?.url;
                             if (fileUrl && fileUrl.startsWith('http')) {
+                                const badge = normalizeQuality(qKey);
                                 serverStreams.push({
                                     name: "Cinejoy",
-                                    title: `Cinejoy - ${serverDisplayName} (${qKey})`,
+                                    title: `Cinejoy - ${serverDisplayName} - ${badge === '4K' ? '4K (2160p)' : qKey}`,
                                     url: fileUrl,
-                                    quality: qKey.includes('1080') ? '1080p' : (qKey.includes('720') ? '720p' : 'Auto'),
+                                    quality: badge,
                                     headers: streamHeaders,
                                     subtitles: serverSubs
                                 });

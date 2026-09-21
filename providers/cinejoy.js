@@ -1,9 +1,26 @@
 /**
  * cinejoy - Built from src/cinejoy/
- * Generated: 2026-09-21T02:28:34.651Z
+ * Generated: 2026-09-21T03:15:24.451Z
  */
 var __defProp = Object.defineProperty;
+var __defProps = Object.defineProperties;
+var __getOwnPropDescs = Object.getOwnPropertyDescriptors;
+var __getOwnPropSymbols = Object.getOwnPropertySymbols;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __propIsEnum = Object.prototype.propertyIsEnumerable;
 var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+var __spreadValues = (a, b) => {
+  for (var prop in b || (b = {}))
+    if (__hasOwnProp.call(b, prop))
+      __defNormalProp(a, prop, b[prop]);
+  if (__getOwnPropSymbols)
+    for (var prop of __getOwnPropSymbols(b)) {
+      if (__propIsEnum.call(b, prop))
+        __defNormalProp(a, prop, b[prop]);
+    }
+  return a;
+};
+var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
 var __publicField = (obj, key, value) => {
   __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
   return value;
@@ -967,6 +984,65 @@ function seal(path, payloadJson, serverInfo) {
 }
 
 // src/cinejoy/index.js
+function parseHlsVariants(masterText, baseUrl) {
+  const lines = masterText.split("\n");
+  const variants = [];
+  let currentInf = null;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line.startsWith("#EXT-X-STREAM-INF:")) {
+      const resMatch = line.match(/RESOLUTION=(\d+)x(\d+)/i);
+      const bwMatch = line.match(/BANDWIDTH=(\d+)/i);
+      currentInf = {
+        width: resMatch ? parseInt(resMatch[1], 10) : 0,
+        height: resMatch ? parseInt(resMatch[2], 10) : 0,
+        bandwidth: bwMatch ? parseInt(bwMatch[1], 10) : 0
+      };
+    } else if (line && !line.startsWith("#") && currentInf) {
+      let streamUrl = line;
+      if (!streamUrl.startsWith("http")) {
+        streamUrl = new URL(streamUrl, baseUrl).toString();
+      }
+      variants.push(__spreadProps(__spreadValues({}, currentInf), {
+        url: streamUrl
+      }));
+      currentInf = null;
+    }
+  }
+  return variants;
+}
+function getQualityBadge(height) {
+  const h = Number(height) || 0;
+  if (h >= 2160)
+    return "4K";
+  if (h >= 1440)
+    return "1440p";
+  if (h >= 1080)
+    return "1080p";
+  if (h >= 720)
+    return "720p";
+  if (h >= 480)
+    return "480p";
+  if (h >= 360)
+    return "360p";
+  return h ? `${h}p` : "Auto";
+}
+function normalizeQuality(qKey) {
+  const s = String(qKey || "").toLowerCase();
+  if (s.includes("2160") || s.includes("4k"))
+    return "4K";
+  if (s.includes("1440") || s.includes("2k"))
+    return "1440p";
+  if (s.includes("1080") || s.includes("fhd"))
+    return "1080p";
+  if (s.includes("720") || s.includes("hd"))
+    return "720p";
+  if (s.includes("480") || s.includes("sd"))
+    return "480p";
+  if (s.includes("360"))
+    return "360p";
+  return getQualityBadge(parseInt(s, 10));
+}
 function onSettings() {
   return __async(this, null, function* () {
     return [
@@ -1031,26 +1107,50 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
               });
               if (rRes.ok) {
                 const rJson = yield rRes.json();
-                const rStreams = ((_a = rJson == null ? void 0 : rJson.data) == null ? void 0 : _a.stream) || (rJson == null ? void 0 : rJson.streams) || [];
-                if (Array.isArray(rStreams) && rStreams.length > 0) {
-                  return rStreams.map((item) => {
-                    if (item.type === "hls" && item.playlist) {
-                      return {
-                        name: "Cinejoy",
-                        title: `Cinejoy - ${serverDisplayName} (HLS)`,
-                        url: item.playlist,
-                        quality: "1080p",
-                        headers: streamHeaders,
-                        subtitles: (item.captions || []).map((c) => ({
-                          url: c.url,
-                          language: (c.language || c.id || "en").toLowerCase(),
-                          name: c.language || c.id || "Subtitle"
-                        })).filter((s2) => !!s2.url)
-                      };
-                    }
-                    return null;
-                  }).filter(Boolean);
+                if (Array.isArray(rJson == null ? void 0 : rJson.streams) && rJson.streams.length > 0) {
+                  return rJson.streams;
                 }
+                const rRawStreams = ((_a = rJson == null ? void 0 : rJson.data) == null ? void 0 : _a.stream) || [];
+                const parsedFromResolver = [];
+                for (const item of rRawStreams) {
+                  const sSubs = (item.captions || []).map((c) => ({
+                    url: c.url,
+                    language: (c.language || c.id || "en").toLowerCase(),
+                    name: c.language || c.id || "Subtitle"
+                  })).filter((s2) => !!s2.url);
+                  if (item.type === "hls" && item.playlist) {
+                    try {
+                      const m3u8Res = yield fetch(item.playlist, { headers: streamHeaders });
+                      if (m3u8Res.ok) {
+                        const m3u8Text = yield m3u8Res.text();
+                        const variants = parseHlsVariants(m3u8Text, item.playlist);
+                        for (const v of variants) {
+                          const badge = getQualityBadge(v.height);
+                          const label = badge === "4K" ? "4K (2160p)" : `${v.height}p`;
+                          parsedFromResolver.push({
+                            name: "Cinejoy",
+                            title: `Cinejoy - ${serverDisplayName} - ${label}`,
+                            url: `${customResolver}/api/playlist?url=${encodeURIComponent(item.playlist)}&height=${v.height}`,
+                            quality: badge,
+                            headers: streamHeaders,
+                            subtitles: sSubs
+                          });
+                        }
+                      }
+                    } catch (e) {
+                    }
+                    parsedFromResolver.push({
+                      name: "Cinejoy",
+                      title: `Cinejoy - ${serverDisplayName} - Auto (Adaptive)`,
+                      url: item.playlist,
+                      quality: "Auto",
+                      headers: streamHeaders,
+                      subtitles: sSubs
+                    });
+                  }
+                }
+                if (parsedFromResolver.length > 0)
+                  return parsedFromResolver;
               }
             } catch (resolverErr) {
               console.warn(`[Cinejoy] Custom resolver error for ${server}:`, resolverErr.message);
@@ -1108,11 +1208,32 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
               name: c.language || c.id || "Subtitle"
             })).filter((s2) => !!s2.url);
             if (type2 === "hls" && playlist) {
+              try {
+                const m3u8Res = yield fetch(playlist, { headers: streamHeaders });
+                if (m3u8Res.ok) {
+                  const m3u8Text = yield m3u8Res.text();
+                  const variants = parseHlsVariants(m3u8Text, playlist);
+                  for (const v of variants) {
+                    const badge = getQualityBadge(v.height);
+                    const label = badge === "4K" ? "4K (2160p)" : `${v.height}p`;
+                    serverStreams.push({
+                      name: "Cinejoy",
+                      title: `Cinejoy - ${serverDisplayName} - ${label}`,
+                      url: customResolver ? `${customResolver}/api/playlist?url=${encodeURIComponent(playlist)}&height=${v.height}` : v.url,
+                      quality: badge,
+                      headers: streamHeaders,
+                      subtitles: serverSubs
+                    });
+                  }
+                }
+              } catch (mErr) {
+                console.warn(`[Cinejoy] Failed to parse HLS variants for ${server}:`, mErr.message);
+              }
               serverStreams.push({
                 name: "Cinejoy",
-                title: `Cinejoy - ${serverDisplayName} (HLS)`,
+                title: `Cinejoy - ${serverDisplayName} - Auto (Adaptive)`,
                 url: playlist,
-                quality: "1080p",
+                quality: "Auto",
                 headers: streamHeaders,
                 subtitles: serverSubs
               });
@@ -1122,11 +1243,12 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
                 const qObj = qualities[qKey];
                 const fileUrl = qObj == null ? void 0 : qObj.url;
                 if (fileUrl && fileUrl.startsWith("http")) {
+                  const badge = normalizeQuality(qKey);
                   serverStreams.push({
                     name: "Cinejoy",
-                    title: `Cinejoy - ${serverDisplayName} (${qKey})`,
+                    title: `Cinejoy - ${serverDisplayName} - ${badge === "4K" ? "4K (2160p)" : qKey}`,
                     url: fileUrl,
-                    quality: qKey.includes("1080") ? "1080p" : qKey.includes("720") ? "720p" : "Auto",
+                    quality: badge,
                     headers: streamHeaders,
                     subtitles: serverSubs
                   });

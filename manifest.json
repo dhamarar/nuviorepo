@@ -51,7 +51,7 @@
       "id": "cinejoy",
       "name": "Cinejoy",
       "description": "Cinejoy streaming provider with multi-server support and multi-language subtitles",
-      "version": "2.1.0",
+      "version": "2.2.0",
       "author": "Nuvio Team",
       "supportedTypes": [
         "movie",
