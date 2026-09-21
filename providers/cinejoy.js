@@ -1,6 +1,6 @@
 /**
  * cinejoy - Built from src/cinejoy/
- * Generated: 2026-09-21T01:57:19.982Z
+ * Generated: 2026-09-21T02:07:44.600Z
  */
 var __defProp = Object.defineProperty;
 var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
@@ -968,15 +968,25 @@ function seal(path, payloadJson, serverInfo) {
 // src/cinejoy/index.js
 function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
   return __async(this, null, function* () {
-    const cleanTmdb = String(tmdbId || "").trim();
-    if (!cleanTmdb) {
-      console.warn("[Cinejoy] Empty TMDB ID provided");
+    let id = tmdbId;
+    let type = mediaType;
+    let s = season;
+    let ep = episode;
+    if (typeof tmdbId === "object" && tmdbId !== null) {
+      id = tmdbId.tmdbId || tmdbId.id || tmdbId.tmdb;
+      type = tmdbId.mediaType || tmdbId.type || type || "movie";
+      s = tmdbId.season || season || 1;
+      ep = tmdbId.episode || episode || 1;
+    }
+    const cleanTmdb = String(id || "").trim();
+    if (!cleanTmdb || cleanTmdb === "[object Object]") {
+      console.warn("[Cinejoy] Invalid TMDB ID provided:", tmdbId);
       return [];
     }
-    const cleanMediaType = String(mediaType || "movie").toLowerCase().trim();
+    const cleanMediaType = String(type || "movie").toLowerCase().trim();
     const isTv = cleanMediaType === "tv" || cleanMediaType === "series";
-    const cleanSeason = Number(season) || 1;
-    const cleanEpisode = Number(episode) || 1;
+    const cleanSeason = Number(s) || 1;
+    const cleanEpisode = Number(ep) || 1;
     console.log(`[Cinejoy] Fetching streams for TMDB: ${cleanTmdb}, Type: ${isTv ? "tv" : "movie"}, S: ${cleanSeason}, E: ${cleanEpisode}`);
     const streams = [];
     try {
@@ -1029,15 +1039,15 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
           const streamArr = ((_a = json.data) == null ? void 0 : _a.stream) || [];
           const serverStreams = [];
           for (const item of streamArr) {
-            const type = item.type;
+            const type2 = item.type;
             const playlist = item.playlist;
             const captions = item.captions || [];
             const serverSubs = captions.map((c) => ({
               url: c.url,
               language: (c.language || c.id || "en").toLowerCase(),
               name: c.language || c.id || "Subtitle"
-            })).filter((s) => !!s.url);
-            if (type === "hls" && playlist) {
+            })).filter((s2) => !!s2.url);
+            if (type2 === "hls" && playlist) {
               serverStreams.push({
                 name: "Cinejoy",
                 title: `Cinejoy - ${serverDisplayName} (HLS)`,
@@ -1046,7 +1056,7 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
                 headers: streamHeaders,
                 subtitles: serverSubs
               });
-            } else if (type === "file" && item.qualities) {
+            } else if (type2 === "file" && item.qualities) {
               const qualities = item.qualities;
               for (const qKey of Object.keys(qualities)) {
                 const qObj = qualities[qKey];
@@ -1075,7 +1085,7 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
         if (Array.isArray(resList)) {
           for (const stream of resList) {
             if (openSubs && openSubs.length > 0) {
-              const existingUrls = new Set(stream.subtitles.map((s) => s.url));
+              const existingUrls = new Set(stream.subtitles.map((s2) => s2.url));
               for (const os of openSubs) {
                 if (!existingUrls.has(os.url)) {
                   stream.subtitles.push(os);

@@ -4,16 +4,29 @@ import { decrypt } from './crypto.js';
 import { HEADERS } from './constants.js';
 
 async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
-    const cleanTmdb = String(tmdbId || "").trim();
-    if (!cleanTmdb) {
-        console.warn("[Cinejoy] Empty TMDB ID provided");
+    let id = tmdbId;
+    let type = mediaType;
+    let s = season;
+    let ep = episode;
+
+    // Handle object argument if Nuvio passes an options object
+    if (typeof tmdbId === 'object' && tmdbId !== null) {
+        id = tmdbId.tmdbId || tmdbId.id || tmdbId.tmdb;
+        type = tmdbId.mediaType || tmdbId.type || type || "movie";
+        s = tmdbId.season || season || 1;
+        ep = tmdbId.episode || episode || 1;
+    }
+
+    const cleanTmdb = String(id || "").trim();
+    if (!cleanTmdb || cleanTmdb === "[object Object]") {
+        console.warn("[Cinejoy] Invalid TMDB ID provided:", tmdbId);
         return [];
     }
 
-    const cleanMediaType = String(mediaType || "movie").toLowerCase().trim();
+    const cleanMediaType = String(type || "movie").toLowerCase().trim();
     const isTv = cleanMediaType === "tv" || cleanMediaType === "series";
-    const cleanSeason = Number(season) || 1;
-    const cleanEpisode = Number(episode) || 1;
+    const cleanSeason = Number(s) || 1;
+    const cleanEpisode = Number(ep) || 1;
 
     console.log(`[Cinejoy] Fetching streams for TMDB: ${cleanTmdb}, Type: ${isTv ? "tv" : "movie"}, S: ${cleanSeason}, E: ${cleanEpisode}`);
     const streams = [];
