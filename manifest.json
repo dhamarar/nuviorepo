@@ -28,9 +28,9 @@
     {
       "id": "netmirror",
       "name": "NetMirror",
-      "description": "Streaming links from netmirror. Automatically disabled on iOS due to compatibility issues.",
-      "version": "1.0.3",
-      "author": "Nuvio Team",
+      "description": "Netflix | Prime | Disney",
+      "version": "1.0.0",
+      "author": "Dustincos",
       "supportedTypes": [
         "movie",
         "tv"
@@ -38,14 +38,18 @@
       "filename": "providers/netmirror.js",
       "enabled": true,
       "hasSettings": true,
-      "logo": "https://net22.cc/favicon.ico",
+      "formats": [
+        "mp4",
+        "m3u8",
+        "mkv"
+      ],
+      "logo": "https://i.postimg.cc/L64M3bYV/netmirror.png",
       "contentLanguage": [
-        "en"
-      ],
-      "disabledPlatforms": [
-        "ios"
-      ],
-      "supportsExternalPlayer": false
+        "en",
+        "hi",
+        "ta",
+        "te"
+      ]
     },
     {
       "id": "cinejoy",
@@ -89,6 +93,29 @@
       "contentLanguage": [
         "en",
         "id"
+      ]
+    },
+    {
+      "id": "movix",
+      "name": "Movix VF",
+      "description": "Movies and TV series in English & French (dubbed/subtitled)",
+      "version": "1.0.0",
+      "author": "wooodyhood",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/movix.js",
+      "enabled": true,
+      "hasSettings": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/XYrPQm87/movix.png",
+      "contentLanguage": [
+        "en",
+        "fr"
       ]
     }
   ]

@@ -1,33 +1,71 @@
 import { PLATFORM_MAP, TMDB_API_KEY } from './constants.js';
 import { resolveApiUrl, buildNewTvHeaders } from './utils.js';
 
-async function getStreams(tmdbId, mediaType, season, episode) {
+async function fetchFromNetflixDirect(tmdbId, mediaType, season, episode, title) {
     try {
-        const tmdbType = mediaType === 'tv' ? 'tv' : 'movie';
-        const tmdbResp = await fetch(`https://api.themoviedb.org/3/${tmdbType}/${tmdbId}?api_key=${TMDB_API_KEY}`, {
-            headers: { 
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-                'Accept': 'application/json'
+        const url = mediaType === 'tv'
+            ? `https://net27.cc/api/embed-tmdb/${tmdbId}?type=tv&s=${season}&e=${episode}`
+            : `https://net27.cc/api/embed-tmdb/${tmdbId}`;
+
+        const response = await fetch(url, {
+            headers: {
+                'Accept': 'application/json, text/plain, */*',
+                'Referer': 'https://net27.cc/',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36'
             }
         });
-        const tmdbData = await tmdbResp.json();
-        const title = mediaType === 'tv' ? tmdbData.name : tmdbData.title;
 
-        if (!title) throw new Error("Could not fetch title from TMDB");
+        if (!response.ok) return null;
+        const data = await response.json();
+        if (data.ok !== true) return null;
 
-        const platforms = ['netflix', 'primevideo', 'hotstar', 'disney'];
-        for (const platformKey of platforms) {
-            try {
-                const streams = await fetchFromPlatform(platformKey, title, mediaType, season, episode);
-                if (streams && streams.length > 0) return streams;
-            } catch (e) {
-                // Try next platform
+        const mediaHeaders = {
+            'Referer': 'https://videodownloader.site/',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36'
+        };
+
+        const subtitles = (data.captions || []).map(cap => {
+            let subUrl = cap.url;
+            if (subUrl.startsWith('/')) {
+                subUrl = 'https://net27.cc' + subUrl;
             }
+            return {
+                url: subUrl,
+                language: cap.lang || 'en',
+                name: cap.name || 'English',
+                headers: mediaHeaders
+            };
+        });
+
+        const streams = [];
+        if (data.streams && data.streams.length > 0) {
+            data.streams.forEach(stream => {
+                streams.push({
+                    name: `NetMirror (Netflix) - ${stream.resolution}p`,
+                    title: `${title}`,
+                    url: stream.url,
+                    quality: `${stream.resolution}p`,
+                    headers: mediaHeaders,
+                    subtitles: subtitles,
+                    provider: 'netmirror'
+                });
+            });
+        } else if (data.mp4) {
+            streams.push({
+                name: 'NetMirror (Netflix) - Auto',
+                title: `${title}`,
+                url: data.mp4,
+                quality: 'Auto',
+                headers: mediaHeaders,
+                subtitles: subtitles,
+                provider: 'netmirror'
+            });
         }
 
-        return [];
-    } catch (error) {
-        return [];
+        return streams;
+    } catch (err) {
+        console.error('[NetMirror] Direct API error:', err.message);
+        return null;
     }
 }
 
@@ -48,7 +86,7 @@ async function fetchFromPlatform(platformKey, title, mediaType, season, episode)
 
     const postUrl = `${apiBase}/newtv/post.php?id=${contentId}`;
     const postResp = await fetch(postUrl, {
-        headers: buildNewTvHeaders(platform.ott, { Lastep: "", Usertoken: "" })
+        headers: buildNewTvHeaders(platform.ott, { Lastep: '', Usertoken: '' })
     });
     const postData = await postResp.json();
 
@@ -151,4 +189,80 @@ async function fetchEpisodesPage(contentId, seasonId, page, seasonNumber, platfo
     return episodes;
 }
 
-module.exports = { getStreams };
+async function getStreams(tmdbId, mediaType, season, episode) {
+    try {
+        const settings = globalThis.SCRAPER_SETTINGS || {};
+        const preferred = settings.preferredPlatform || 'all';
+
+        const tmdbType = mediaType === 'tv' ? 'tv' : 'movie';
+        const tmdbResp = await fetch(`https://api.themoviedb.org/3/${tmdbType}/${tmdbId}?api_key=${TMDB_API_KEY}`, {
+            headers: { 
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+                'Accept': 'application/json'
+            }
+        });
+        const tmdbData = await tmdbResp.json();
+        const title = mediaType === 'tv' ? tmdbData.name : tmdbData.title;
+
+        if (!title) throw new Error("Could not fetch title from TMDB");
+
+        let platforms = ['netflix', 'primevideo', 'hotstar', 'disney'];
+        if (preferred !== 'all') {
+            platforms = [preferred, ...platforms.filter(p => p !== preferred)];
+        }
+
+        for (const platformKey of platforms) {
+            try {
+                let streams = [];
+                if (platformKey === 'netflix') {
+                    streams = await fetchFromNetflixDirect(tmdbId, mediaType, season, episode, title);
+                }
+                if (!streams || streams.length === 0) {
+                    streams = await fetchFromPlatform(platformKey, title, mediaType, season, episode);
+                }
+                if (streams && streams.length > 0) return streams;
+            } catch (e) {
+                // Try next platform
+            }
+        }
+
+        return [];
+    } catch (error) {
+        return [];
+    }
+}
+
+async function onSettings() {
+    return [
+        {
+            type: "header",
+            label: "Source Selection"
+        },
+        {
+            type: "select",
+            key: "preferredPlatform",
+            label: "Preferred Streaming Source",
+            description: "Select which platform to try first. If content isn't found, others will be searched as fallback.",
+            options: [
+                { label: "All (Auto)", value: "all" },
+                { label: "Netflix", value: "netflix" },
+                { label: "Prime Video", value: "primevideo" },
+                { label: "Hotstar / Disney+", value: "hotstar" }
+            ],
+            defaultValue: "all"
+        },
+        {
+            type: "header",
+            label: "Advanced"
+        },
+        {
+            type: "toggle",
+            key: "forceHd",
+            label: "Force High Quality",
+            description: "Attempts to force the player into HD mode when possible.",
+            defaultValue: true
+        }
+    ];
+}
+
+module.exports = { getStreams, onSettings };
