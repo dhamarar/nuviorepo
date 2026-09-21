@@ -1,6 +1,6 @@
 {
   "name": "Nuvio Repo",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "scrapers": [
     {
       "id": "fibwatch",
@@ -116,6 +116,28 @@
       "contentLanguage": [
         "en",
         "fr"
+      ]
+    },
+    {
+      "id": "aether",
+      "name": "Aether",
+      "description": "Movies and TV shows via Aether's FEM API (FebBox). Requires a free FebBox ui token.",
+      "version": "1.0.0",
+      "author": "dhamarar",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/aether.js",
+      "enabled": true,
+      "hasSettings": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://www.google.com/s2/favicons?domain=aether.st&sz=128",
+      "contentLanguage": [
+        "en"
       ]
     }
   ]
