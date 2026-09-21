@@ -4,6 +4,7 @@ import { fetchSpanishPlaylist } from './spanish.js';
 import {
     buildPlaybackHeaders,
     buildStreamTitle,
+    buildTokenFreeHeaders,
     dedupeSubtitles,
     getEpisodeMeta,
     getTmdbMeta,
@@ -89,7 +90,7 @@ function buildHlsStream(payload, meta, epMeta, season, episode, regionCode, head
     };
 }
 
-function buildSpanishStream(playlist, meta, epMeta, season, episode, headers) {
+function buildSpanishStream(playlist, meta, epMeta, season, episode) {
     const label = playlist.label || 'ES';
     const title = `${buildStreamTitle(meta, epMeta, label, 'HLS', season, episode, '')}\n🔓 Token-free source`;
 
@@ -101,7 +102,9 @@ function buildSpanishStream(playlist, meta, epMeta, season, episode, headers) {
         url: playlist.url,
         quality: 'Auto',
         format: 'm3u8',
-        headers,
+        // This host sits behind Cloudflare and 403s without these headers, so they
+        // have to travel with the stream — the m3u8 and its segments need them too.
+        headers: buildTokenFreeHeaders('https://aether.st'),
         subtitles: [],
         provider: 'aether'
     };
@@ -161,8 +164,8 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     if (enableSpanish) {
         try {
             const playlist = await fetchSpanishPlaylist(tmdbId, mediaType, season, episode, spanishLang);
-            tokenFreeStreams.push(buildSpanishStream(playlist, meta, epMeta, season, episode, headers));
-            console.log(`[Aether] Token-free source via ${playlist.host}: ok (${playlist.label})`);
+            tokenFreeStreams.push(buildSpanishStream(playlist, meta, epMeta, season, episode));
+            console.log(`[Aether] Token-free source via ${playlist.host}: ok (${playlist.label}, server=${playlist.server || 'n/a'})`);
         } catch (error) {
             console.log(`[Aether] Token-free source unavailable: ${error.message}`);
         }

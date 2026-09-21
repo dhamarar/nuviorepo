@@ -1,6 +1,6 @@
 /**
  * aether - Built from src/aether/
- * Generated: 2026-09-21T07:29:45.454Z
+ * Generated: 2026-09-21T07:36:29.124Z
  */
 var __async = (__this, __arguments, generator) => {
   return new Promise((resolve, reject) => {
@@ -39,6 +39,8 @@ var SPANISH_LANGS = {
   esp: "Castellano",
   lat: "Latino"
 };
+var SPANISH_LANG_ORDER = ["sub", "esp", "lat"];
+var MAX_LANG_ATTEMPTS = 3;
 var QUALITY_LABELS = {
   ORG: "ORG",
   "4K": "4K",
@@ -161,26 +163,6 @@ function fetchJson(url, headers, timeoutMs = 15e3) {
     }
   });
 }
-function fetchFinalUrl(url, headers, timeoutMs = 15e3) {
-  return __async(this, null, function* () {
-    let timer = null;
-    try {
-      const response = yield Promise.race([
-        fetch(url, { method: "GET", redirect: "follow", headers }),
-        new Promise((_, reject) => {
-          timer = setTimeout(() => reject(new Error("Request timed out")), timeoutMs);
-        })
-      ]);
-      const finalUrl = response.url || url;
-      return { ok: response.ok, status: response.status, url: finalUrl };
-    } catch (error) {
-      return { ok: false, status: 0, url, error: error.message };
-    } finally {
-      if (timer)
-        clearTimeout(timer);
-    }
-  });
-}
 function buildFemHeaders(site) {
   return {
     "Accept": "application/json, text/plain, */*",
@@ -196,10 +178,13 @@ function buildPlaybackHeaders() {
 function buildTokenFreeHeaders(site) {
   const origin = site || "https://aether.st";
   return {
-    "Accept": "*/*",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
     "Origin": origin,
     "Referer": origin + "/",
+    "Sec-Fetch-Dest": "empty",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Site": "cross-site",
     "User-Agent": USER_AGENT
   };
 }
@@ -419,13 +404,36 @@ function fetchSpanishPlaylist(tmdbId, mediaType, season, episode, lang) {
     const path = mediaType === "tv" ? `/tv/${tmdbId}/${season}/${episode}` : `/movie/${tmdbId}`;
     const attempts = [];
     for (const host of SPANISH_HOSTS) {
-      const url = `${host}${path}?lang=${encodeURIComponent(lang)}`;
-      const result = yield fetchFinalUrl(url, buildTokenFreeHeaders("https://aether.st"));
-      if (result.ok && result.url) {
-        return { url: result.url, host, requested: url, label: SPANISH_LANGS[lang] || lang };
+      let queue = [lang].concat(SPANISH_LANG_ORDER.filter((entry) => entry !== lang));
+      const tried = {};
+      let used = 0;
+      while (queue.length > 0 && used < MAX_LANG_ATTEMPTS) {
+        const candidate = queue.shift();
+        if (tried[candidate])
+          continue;
+        tried[candidate] = true;
+        used += 1;
+        const url = `${host}${path}?lang=${encodeURIComponent(candidate)}`;
+        const result = yield fetchJson(url, buildTokenFreeHeaders("https://aether.st"));
+        const body = result.data || {};
+        if (result.ok && body.url) {
+          return {
+            url: body.url,
+            lang: candidate,
+            label: SPANISH_LANGS[candidate] || candidate,
+            server: body.server || "",
+            host,
+            requested: url
+          };
+        }
+        const reason = body.error || `HTTP ${result.status}`;
+        attempts.push(`${host} lang=${candidate} -> ${reason}`);
+        if (body.error === "lang_not_available") {
+          queue = (body.available || []).map((entry) => String(entry).toLowerCase()).filter((entry) => !!SPANISH_LANGS[entry] && !tried[entry]);
+        } else if (body.error === "tmdb_not_found") {
+          throw new Error(`Aether token-free source has no stream for this title (${reason})`);
+        }
       }
-      const detail = result.error ? `${result.error}` : `HTTP ${result.status}`;
-      attempts.push(`${host} -> ${detail}`);
     }
     const error = new Error(`Aether token-free source unavailable (${attempts.join("; ")})`);
     error.attempts = attempts;
@@ -499,7 +507,7 @@ function buildHlsStream(payload, meta, epMeta, season, episode, regionCode, head
     provider: "aether"
   };
 }
-function buildSpanishStream(playlist, meta, epMeta, season, episode, headers) {
+function buildSpanishStream(playlist, meta, epMeta, season, episode) {
   const label = playlist.label || "ES";
   const title = `${buildStreamTitle(meta, epMeta, label, "HLS", season, episode, "")}
 \u{1F513} Token-free source`;
@@ -511,7 +519,9 @@ function buildSpanishStream(playlist, meta, epMeta, season, episode, headers) {
     url: playlist.url,
     quality: "Auto",
     format: "m3u8",
-    headers,
+    // This host sits behind Cloudflare and 403s without these headers, so they
+    // have to travel with the stream — the m3u8 and its segments need them too.
+    headers: buildTokenFreeHeaders("https://aether.st"),
     subtitles: [],
     provider: "aether"
   };
@@ -564,8 +574,8 @@ function getStreams(tmdbId, mediaType, season, episode) {
     if (enableSpanish) {
       try {
         const playlist = yield fetchSpanishPlaylist(tmdbId, mediaType, season, episode, spanishLang);
-        tokenFreeStreams.push(buildSpanishStream(playlist, meta, epMeta, season, episode, headers));
-        console.log(`[Aether] Token-free source via ${playlist.host}: ok (${playlist.label})`);
+        tokenFreeStreams.push(buildSpanishStream(playlist, meta, epMeta, season, episode));
+        console.log(`[Aether] Token-free source via ${playlist.host}: ok (${playlist.label}, server=${playlist.server || "n/a"})`);
       } catch (error) {
         console.log(`[Aether] Token-free source unavailable: ${error.message}`);
       }

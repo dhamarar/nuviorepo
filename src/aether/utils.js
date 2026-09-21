@@ -33,32 +33,6 @@ export async function fetchJson(url, headers, timeoutMs = 15000) {
     }
 }
 
-/**
- * GET a URL and report the URL the request ended on.
- *
- * Aether's token-free source does not answer with JSON: it either serves the playlist
- * at the endpoint itself or redirects to it, and Aether reads the response URL. So we
- * follow redirects and hand back the final URL, without consuming the body (which may
- * be an m3u8).
- */
-export async function fetchFinalUrl(url, headers, timeoutMs = 15000) {
-    let timer = null;
-    try {
-        const response = await Promise.race([
-            fetch(url, { method: 'GET', redirect: 'follow', headers }),
-            new Promise((_, reject) => {
-                timer = setTimeout(() => reject(new Error('Request timed out')), timeoutMs);
-            })
-        ]);
-        const finalUrl = response.url || url;
-        return { ok: response.ok, status: response.status, url: finalUrl };
-    } catch (error) {
-        return { ok: false, status: 0, url, error: error.message };
-    } finally {
-        if (timer) clearTimeout(timer);
-    }
-}
-
 /** FEM API rejects bare requests, so we present the Aether mirror as origin. */
 export function buildFemHeaders(site) {
     return {
@@ -78,17 +52,25 @@ export function buildPlaybackHeaders() {
 /**
  * Headers for Aether's token-free endpoint, which sits behind Cloudflare.
  *
- * Aether's own code sends no headers here, but it runs in a browser that adds
- * Accept / Accept-Language / Origin / Referer automatically. Reproducing that set
- * keeps the request looking like the traffic the endpoint expects to serve.
+ * These are **required**, not cosmetic. Verified live: the same URL answers
+ * 403 "Sorry, you have been blocked" without the Sec-Fetch-* pair and 200 with it.
+ * Aether's own code sets no headers because it runs in a browser, which adds this
+ * whole set automatically.
+ *
+ * The returned set is also used as the playback headers for that stream, because the
+ * m3u8 and its segments are served from the same Cloudflare-protected host and 403
+ * without them too.
  */
 export function buildTokenFreeHeaders(site) {
     const origin = site || 'https://aether.st';
     return {
-        'Accept': '*/*',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
         'Origin': origin,
         'Referer': origin + '/',
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'cross-site',
         'User-Agent': USER_AGENT
     };
 }

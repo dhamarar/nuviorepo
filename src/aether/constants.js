@@ -61,24 +61,42 @@ export const AETHER_SITE_DOMAINS = ['aether.st', 'aether.ist', 'aether.mom'];
 /**
  * Aether's built-in **token-free** source.
  *
- * Aether ships three variants of a single endpoint — `aether-latino`,
- * `aether-castellano` and `aether-subtitulado` — all served from here and all
- * registered with `disabled: false` and `CORS_ALLOWED`. They are what the site
- * offers before any FebBox token is entered. Read out of Aether's own bundle:
+ * Aether ships three variants of one endpoint — `aether-latino`, `aether-castellano`
+ * and `aether-subtitulado` — all served from here and all registered in its bundle
+ * with `disabled: false` and `CORS_ALLOWED`. They are what the site offers before any
+ * FebBox token is entered.
  *
- *   GET /movie/:tmdbId?lang=lat|esp|sub
- *   GET /tv/:tmdbId/:season/:episode?lang=lat|esp|sub
- *     -> 200, and the playlist is read from the response URL (`response.url`), so the
- *        endpoint either serves the m3u8 itself or redirects to it. Both cases are
- *        handled by following redirects and using the final URL.
+ * Contract verified live against https://le.aether.cx on 2026-09-21:
+ *
+ *   GET /movie/:tmdbId?lang=sub|esp|lat
+ *   GET /tv/:tmdbId/:season/:episode?lang=sub|esp|lat
+ *     -> 200 {"status":200,"type":"movie","tmdbId":550,"language":"SUB",
+ *             "server":"vidhide","url":"https://le.aether.cx/<token>.m3u8"}
+ *
+ *   The playlist URL is the JSON field `url`, NOT the response URL — the endpoint
+ *   never redirects. (Aether's own bundle reads `response.url`, which only works
+ *   because its fetcher merges the parsed body with the status code.)
+ *
+ *   Errors:
+ *     404 {"error":"lang_not_available","available":["LAT","SUB"]}
+ *     404 {"error":"tmdb_not_found","message":"TMDB id has no imdb mapping"}
+ *     502 can appear transiently while the upstream is flaky
+ *
+ * Cloudflare gate: the same URL answers 403 "Sorry, you have been blocked" without the
+ * Sec-Fetch-Dest/Sec-Fetch-Mode/Sec-Fetch-Site headers and 200 with them. Those headers
+ * are therefore required on the API call, on the m3u8, and on the segments — see
+ * buildTokenFreeHeaders(). Aether's own code sets none because the browser adds them.
+ *
+ * Playback note: the master playlist points at relative variant playlists on this same
+ * host (so the headers must travel with the stream), and the segments themselves are
+ * served from redirector.cdnsync.cloud as `/?t=<token>`. Each segment is a 70-byte
+ * 1x1 PNG decoy prefix followed by 188-byte-aligned MPEG-TS; ffprobe reads it as
+ * mpegts (h264 + aac, ~10s). ExoPlayer's TS extractor searches for the sync byte, so it
+ * should skip the prefix, but that has not been confirmed in the actual player. That
+ * CDN also returned 522 for 1 of 7 titles tested, so it is flaky.
  *
  * There is no aether.ist equivalent of this host, so the list is a one-element array
  * kept for shape and easy extension.
- *
- * Reachability caveat: Cloudflare answers "Sorry, you have been blocked" for this
- * hostname from datacenter IPs (verified 2026-09-21) even though fembox.aether.cx
- * answers fine from the same IP, so this source could not be exercised end to end
- * from the build environment. The request shape is copied from Aether's own code.
  */
 export const SPANISH_HOSTS = ['https://le.aether.cx'];
 
@@ -88,6 +106,12 @@ export const SPANISH_LANGS = {
     esp: 'Castellano',
     lat: 'Latino'
 };
+
+/** Preference order used when the requested language is not offered for a title. */
+export const SPANISH_LANG_ORDER = ['sub', 'esp', 'lat'];
+
+/** Cap on language attempts per host, so a misbehaving service cannot loop us. */
+export const MAX_LANG_ATTEMPTS = 3;
 
 /** Quality labels FEM API uses, mapped to what Nuvio displays. */
 export const QUALITY_LABELS = {
