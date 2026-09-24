@@ -2,7 +2,7 @@ import { PROVIDER_NAME } from './constants.js';
 import { fetchAphrodite } from './aphrodite.js';
 import { fetchArtemis } from './artemis.js';
 import { fetchSubtitles } from './subtitles.js';
-import { buildStreamTitle, getTmdbMeta, mergeSubtitles, qualityBadge, rankQuality } from './utils.js';
+import { buildStreamTitle, getTmdbMeta, log, mergeSubtitles, qualityBadge, rankQuality } from './utils.js';
 
 /**
  * Atlantic (https://atlantic.st) — a movie-web / P-Stream fork.
@@ -121,52 +121,86 @@ function buildStreams(source, meta, season, episode, subtitles) {
 }
 
 export async function getStreams(tmdbId, mediaType, season, episode) {
-    const settings = readSettings();
-    const type = mediaType === 'tv' ? 'tv' : 'movie';
-    const seasonNumber = type === 'tv' ? Number(season) || 1 : null;
-    const episodeNumber = type === 'tv' ? Number(episode) || 1 : null;
+    try {
+        const settings = readSettings();
+        const type = mediaType === 'tv' ? 'tv' : 'movie';
+        const seasonNumber = type === 'tv' ? Number(season) || 1 : null;
+        const episodeNumber = type === 'tv' ? Number(episode) || 1 : null;
 
-    const meta = await getTmdbMeta(tmdbId, type);
+        log('--- getStreams tmdb=' + tmdbId + ' type=' + type +
+            (type === 'tv' ? ' S' + seasonNumber + 'E' + episodeNumber : '') + ' ---');
+        log('settings: aphrodite=' + settings.enableAphrodite + ' artemis=' + settings.enableArtemis +
+            ' granite=' + settings.enableGranite + ' natsuki=' + settings.enableNatsuki +
+            ' opensubs=' + settings.enableOpenSubtitles +
+            ' maxPerLanguage=' + settings.maxSubtitlesPerLanguage);
 
-    const subtitleJob = fetchSubtitles(
-        {
-            tmdbId: tmdbId,
-            mediaType: type,
-            season: seasonNumber,
-            episode: episodeNumber,
-            imdbId: meta.imdbId
-        },
-        settings
-    ).catch(() => []);
+        const meta = await getTmdbMeta(tmdbId, type);
 
-    const aphroditeJob = settings.enableAphrodite
-        ? fetchAphrodite(tmdbId, type, seasonNumber, episodeNumber).catch(() => null)
-        : Promise.resolve(null);
+        const subtitleJob = fetchSubtitles(
+            {
+                tmdbId: tmdbId,
+                mediaType: type,
+                season: seasonNumber,
+                episode: episodeNumber,
+                imdbId: meta.imdbId
+            },
+            settings
+        ).catch(error => {
+            log('subtitles failed: ' + error.message);
+            return [];
+        });
 
-    const artemisJob = settings.enableArtemis
-        ? fetchArtemis(tmdbId, type, seasonNumber, episodeNumber).catch(() => null)
-        : Promise.resolve(null);
+        const aphroditeJob = settings.enableAphrodite
+            ? fetchAphrodite(tmdbId, type, seasonNumber, episodeNumber).catch(error => {
+                log('aphrodite threw: ' + error.message);
+                return null;
+            })
+            : Promise.resolve(null);
 
-    const results = await Promise.all([aphroditeJob, artemisJob, subtitleJob]);
-    const sources = [results[0], results[1]].filter(Boolean);
+        const artemisJob = settings.enableArtemis
+            ? fetchArtemis(tmdbId, type, seasonNumber, episodeNumber).catch(error => {
+                log('artemis threw: ' + error.message);
+                return null;
+            })
+            : Promise.resolve(null);
 
-    const subtitles = mergeSubtitles(
-        results[2] || [],
-        settings.maxSubtitlesPerLanguage,
-        settings.maxSubtitlesTotal
-    );
+        const results = await Promise.all([aphroditeJob, artemisJob, subtitleJob]);
+        const sources = [results[0], results[1]].filter(Boolean);
 
-    const streams = [];
-    for (let i = 0; i < sources.length; i++) {
-        const built = buildStreams(sources[i], meta, seasonNumber, episodeNumber, subtitles);
-        for (let j = 0; j < built.length; j++) streams.push(built[j]);
+        if (!sources.length) {
+            log('RESULT: 0 streams — no source resolved. If you see network errors above, the ' +
+                'device could not reach cdn.hls.lol / stellar.hls.lol.');
+            return [];
+        }
+
+        const subtitles = mergeSubtitles(
+            results[2] || [],
+            settings.maxSubtitlesPerLanguage,
+            settings.maxSubtitlesTotal
+        );
+
+        const streams = [];
+        for (let i = 0; i < sources.length; i++) {
+            const built = buildStreams(sources[i], meta, seasonNumber, episodeNumber, subtitles);
+            for (let j = 0; j < built.length; j++) streams.push(built[j]);
+        }
+
+        // Highest quality first. Array.prototype.sort is stable, so a source's
+        // adaptive entry stays above its own per-quality entries (same badge).
+        streams.sort((a, b) => rankQuality(b.quality) - rankQuality(a.quality));
+
+        log('RESULT: ' + streams.length + ' stream(s) from ' +
+            sources.map(source => source.label).join(' + ') +
+            ', ' + subtitles.length + ' subtitle track(s)');
+        for (let i = 0; i < streams.length; i++) {
+            log('  #' + (i + 1) + ' [' + streams[i].quality + '] ' + streams[i].name);
+        }
+
+        return streams;
+    } catch (error) {
+        log('FATAL: ' + (error && error.message ? error.message : error));
+        return [];
     }
-
-    // Highest quality first. Array.prototype.sort is stable, so a source's
-    // adaptive entry stays above its own per-quality entries (same badge).
-    streams.sort((a, b) => rankQuality(b.quality) - rankQuality(a.quality));
-
-    return streams;
 }
 
 export async function onSettings() {

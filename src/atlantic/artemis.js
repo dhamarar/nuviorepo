@@ -1,6 +1,6 @@
 import { ARTEMIS } from './constants.js';
 import { signHeaders, clearSession } from './gate.js';
-import { fetchJsonWithRetry, loadMaster, variantIsPlayable } from './utils.js';
+import { briefUrl, fetchJsonWithRetry, loadMaster, log, summarise, variantIsPlayable } from './utils.js';
 
 /**
  * Artemis — Atlantic's second source.
@@ -40,33 +40,52 @@ async function request(path) {
 /** Returns a `{ url, headers, playlist }` descriptor, or null when unavailable. */
 export async function fetchArtemis(tmdbId, mediaType, season, episode) {
     const path = buildPath(tmdbId, mediaType, season, episode);
+    log('artemis: GET ' + path);
 
     let response;
     try {
         response = await request(path);
     } catch (error) {
+        log('artemis: request threw (' + error.message + ')');
         return null;
     }
+    log('artemis: API HTTP ' + response.status + ' -> ' + summarise(response.data));
 
     if (response.status === 401 && response.data && response.data.renew) {
+        log('artemis: session expired, re-handshaking and retrying once');
         clearSession('artemis');
         try {
             response = await request(path);
         } catch (error) {
+            log('artemis: retry threw (' + error.message + ')');
             return null;
         }
+        log('artemis: retry HTTP ' + response.status + ' -> ' + summarise(response.data));
     }
 
     const data = response.data;
-    if (!data || !data.found || !data.url) return null;
+    if (!data || !data.found || !data.url) {
+        log('artemis: dropped — no stream for this title');
+        return null;
+    }
+    log('artemis: playlist ' + briefUrl(data.url));
 
     const playlist = await loadMaster(data.url, PLAYLIST_TIMEOUT_MS);
-    if (!playlist) return null;
+    if (!playlist) {
+        log('artemis: dropped — master playlist unusable');
+        return null;
+    }
 
     const top = playlist.variants[0];
     if (top && !(await variantIsPlayable(top.url, playlist.headers, PLAYLIST_TIMEOUT_MS))) {
+        // Expected whenever Artemis lands on its broken `Orbit` upstream.
+        log('artemis: dropped — upstream "' + (data.source || '?') +
+            '" is dead (top variant ' + top.height + 'p not served)');
         return null;
     }
+
+    log('artemis: OK via ' + (data.source || '?') + ' — ' + playlist.variants.length +
+        ' renditions, top ' + (top ? top.height + 'p' : 'n/a'));
 
     return {
         label: ARTEMIS.label,

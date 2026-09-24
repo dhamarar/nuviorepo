@@ -7,6 +7,48 @@ import {
     USER_AGENT
 } from './constants.js';
 
+/**
+ * Logging.
+ *
+ * Nuvio runs providers inside a QuickJS sandbox and forwards their `console`
+ * output to Android's logcat under the **`PluginRuntime`** tag, prefixed with
+ * `Plugin:<manifest-url>:<id>`. So `adb logcat -s PluginRuntime` shows these
+ * lines on a real device. Keep every message to a single line.
+ */
+export function log(message) {
+    try {
+        console.log('[Atlantic] ' + message);
+    } catch (error) {
+        // Logging must never be the reason a scrape fails.
+    }
+}
+
+/** Trim a URL so one log line stays readable. */
+export function briefUrl(url) {
+    const text = String(url || '');
+    return text.length > 80 ? text.slice(0, 80) + '...' : text;
+}
+
+export function keysOf(data) {
+    if (!data || typeof data !== 'object') return 'none';
+    return Object.keys(data).join(',') || 'none';
+}
+
+/** One-line summary of a source API response, for logcat. */
+export function summarise(data) {
+    if (!data || typeof data !== 'object') return String(data);
+    const parts = [];
+    if (data.found !== undefined) parts.push('found=' + data.found);
+    if (data.renew !== undefined) parts.push('renew=' + data.renew);
+    if (data.format || data.type) parts.push('format=' + (data.format || data.type));
+    if (data.source) parts.push('upstream=' + data.source);
+    if (Array.isArray(data.availableSources)) {
+        parts.push('available=[' + data.availableSources.join(',') + ']');
+    }
+    if (data.title) parts.push('title="' + data.title + '"');
+    return parts.length ? parts.join(' ') : 'keys=' + keysOf(data);
+}
+
 /** fetch + text with a hard timeout. Never throws; always resolves to a result. */
 export async function fetchText(url, options, timeoutMs) {
     let timer = null;
@@ -20,6 +62,11 @@ export async function fetchText(url, options, timeoutMs) {
         const text = await response.text();
         return { ok: response.ok, status: response.status, text };
     } catch (error) {
+        // A status-0 failure is the one that silently kills a source, so it is
+        // the single most useful thing to surface. The native fetch keeps
+        // running after this timeout, so the host may log its own
+        // "Fetch bridge error" line much later — that is expected.
+        log('network error after ' + timeoutMs + 'ms: ' + briefUrl(url) + ' (' + error.message + ')');
         return { ok: false, status: 0, text: '', error: error.message };
     } finally {
         if (timer) clearTimeout(timer);
@@ -194,9 +241,24 @@ export function looksLikePlaylist(text) {
 export async function loadMaster(url, timeoutMs) {
     const headers = playbackHeaders();
     const result = await fetchWithRetry(url, { headers: headers }, timeoutMs, 2);
-    if (!result.ok || !looksLikePlaylist(result.text)) return null;
+    if (!result.ok) {
+        log('master playlist HTTP ' + result.status + ' ' + briefUrl(url));
+        return null;
+    }
+    if (!looksLikePlaylist(result.text)) {
+        // The CDN answers 200 text/html with a decoy page when the Referer is
+        // missing, so this is the signature of a stripped/blocked header.
+        log('master playlist is NOT HLS (got ' + result.text.length + ' bytes of ' +
+            (result.text.indexOf('<') === 0 ? 'HTML' : 'unknown') + ') — headers likely stripped');
+        return null;
+    }
     const parsed = parseMasterPlaylist(result.text, url);
-    if (!parsed.variants.length) return null;
+    if (!parsed.variants.length) {
+        log('master playlist has no variants: ' + briefUrl(url));
+        return null;
+    }
+    log('master ok: ' + parsed.variants.length + ' variants, separateAudio=' +
+        parsed.hasSeparateAudio + ', top=' + qualityBadge(parsed.variants[0].height));
     return { headers: headers, variants: parsed.variants, hasSeparateAudio: parsed.hasSeparateAudio };
 }
 
@@ -210,7 +272,10 @@ export async function loadMaster(url, timeoutMs) {
  */
 export async function variantIsPlayable(url, headers, timeoutMs) {
     const result = await fetchWithRetry(url, { headers: headers }, timeoutMs, 2);
-    if (!result.ok) return false;
+    if (!result.ok) {
+        log('variant probe HTTP ' + result.status + ' ' + briefUrl(url));
+        return false;
+    }
     return result.text.indexOf('#EXTINF') !== -1 || looksLikePlaylist(result.text);
 }
 
@@ -224,11 +289,14 @@ export async function getTmdbMeta(tmdbId, mediaType) {
     const data = result.data || {};
     const external = data.external_ids || {};
     const date = data.release_date || data.first_air_date || '';
-    return {
+    const meta = {
         title: data.title || data.name || data.original_title || data.original_name || '',
         year: date ? String(date).slice(0, 4) : '',
         imdbId: external.imdb_id || data.imdb_id || ''
     };
+    log('tmdb ' + type + '/' + tmdbId + ' -> "' + meta.title + '" (' + (meta.year || '?') +
+        '), imdb=' + (meta.imdbId || 'NONE'));
+    return meta;
 }
 
 /** Resolve a backend's language *name* to an ISO code, or '' when unrecognised. */

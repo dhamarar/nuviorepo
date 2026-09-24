@@ -1,6 +1,6 @@
 /**
  * atlantic - Built from src/atlantic/
- * Generated: 2026-09-24T04:31:55.075Z
+ * Generated: 2026-09-24T07:35:50.961Z
  */
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -207,171 +207,42 @@ var LANGUAGE_MAP = {
 
 // src/atlantic/gate.js
 var import_crypto_js = __toESM(require("crypto-js"));
-var SOURCES = {
-  aphrodite: APHRODITE,
-  artemis: ARTEMIS
-};
-var sessions = {};
-var pending = {};
-var EXPIRY_SKEW_SECONDS = 60;
-var HANDSHAKE_TIMEOUT_MS = 12e3;
-function randomHex(bytes) {
-  const out = [];
-  const webCrypto = globalThis.crypto;
-  if (webCrypto && typeof webCrypto.getRandomValues === "function") {
-    const buffer = new Uint8Array(bytes);
-    try {
-      webCrypto.getRandomValues(buffer);
-      for (let i = 0; i < buffer.length; i++) {
-        out.push(("0" + buffer[i].toString(16)).slice(-2));
-      }
-      return out.join("");
-    } catch (error) {
-    }
-  }
-  for (let i = 0; i < bytes; i++) {
-    out.push(("0" + Math.floor(Math.random() * 256).toString(16)).slice(-2));
-  }
-  return out.join("");
-}
-function nowSeconds() {
-  return Math.floor(Date.now() / 1e3);
-}
-function hmacHex(keyHex, message) {
-  return import_crypto_js.default.HmacSHA256(message, import_crypto_js.default.enc.Hex.parse(keyHex)).toString(import_crypto_js.default.enc.Hex);
-}
-function hexToUtf8(hex) {
-  return import_crypto_js.default.enc.Hex.parse(hex).toString(import_crypto_js.default.enc.Utf8);
-}
-function decryptHandshakePayload(keyHex, payloadHex) {
-  const raw = String(payloadHex || "");
-  if (raw.length < 24 + 32 + 32)
-    return "";
-  const ivHex = raw.slice(0, 24);
-  const bodyHex = raw.slice(24);
-  const dataHex = bodyHex.slice(0, bodyHex.length - 32);
-  const key = import_crypto_js.default.enc.Hex.parse(keyHex);
-  const zeros = import_crypto_js.default.enc.Hex.parse(new Array(dataHex.length + 1).join("0"));
-  const keystream = import_crypto_js.default.AES.encrypt(zeros, key, {
-    iv: import_crypto_js.default.enc.Hex.parse(ivHex + "00000002"),
-    mode: import_crypto_js.default.mode.CTR,
-    padding: import_crypto_js.default.pad.NoPadding
-  }).ciphertext.toString(import_crypto_js.default.enc.Hex);
-  let plainHex = "";
-  for (let i = 0; i < dataHex.length; i += 2) {
-    const a = parseInt(dataHex.substr(i, 2), 16);
-    const b = parseInt(keystream.substr(i, 2) || "0", 16);
-    plainHex += ("0" + (a ^ b).toString(16)).slice(-2);
-  }
-  return hexToUtf8(plainHex);
-}
-function fetchWithTimeout(url, options, timeoutMs) {
-  return __async(this, null, function* () {
-    let timer = null;
-    try {
-      return yield Promise.race([
-        fetch(url, options),
-        new Promise((resolve, reject) => {
-          timer = setTimeout(() => reject(new Error("Handshake timed out")), timeoutMs);
-        })
-      ]);
-    } finally {
-      if (timer)
-        clearTimeout(timer);
-    }
-  });
-}
-function handshake(name) {
-  return __async(this, null, function* () {
-    const source = SOURCES[name];
-    const ts = nowSeconds();
-    const nonce = randomHex(8);
-    const sig = hmacHex(source.keyHex, source.code + "|" + ts + "|" + nonce);
-    const response = yield fetchWithTimeout(
-      source.base + source.handshakePath,
-      {
-        method: "POST",
-        headers: {
-          "Accept": "application/json, text/plain, */*",
-          "Content-Type": "application/json",
-          "Origin": SITE_ORIGIN,
-          "Referer": SITE_ORIGIN + "/",
-          "User-Agent": USER_AGENT
-        },
-        body: JSON.stringify({ c: source.code, ts, n: nonce, s: sig })
-      },
-      HANDSHAKE_TIMEOUT_MS
-    );
-    if (!response.ok) {
-      throw new Error(name + " handshake failed (HTTP " + response.status + ")");
-    }
-    const text = yield response.text();
-    let payload = null;
-    try {
-      payload = JSON.parse(text);
-    } catch (error) {
-      payload = null;
-    }
-    if (!payload || !payload.d) {
-      throw new Error(name + " handshake returned no payload");
-    }
-    let session = null;
-    try {
-      session = JSON.parse(decryptHandshakePayload(source.keyHex, payload.d));
-    } catch (error) {
-      session = null;
-    }
-    if (!session || !session.sid || !session.skey) {
-      throw new Error(name + " handshake payload could not be decrypted");
-    }
-    return { sid: String(session.sid), skey: String(session.skey), exp: Number(session.exp) || 0 };
-  });
-}
-function getSession(name) {
-  return __async(this, null, function* () {
-    const current = sessions[name];
-    if (current && (!current.exp || current.exp - EXPIRY_SKEW_SECONDS > nowSeconds())) {
-      return current;
-    }
-    if (!pending[name]) {
-      pending[name] = handshake(name).then(
-        (session) => {
-          sessions[name] = session;
-          pending[name] = null;
-          return session;
-        },
-        (error) => {
-          sessions[name] = null;
-          pending[name] = null;
-          throw error;
-        }
-      );
-    }
-    return pending[name];
-  });
-}
-function signHeaders(name, path) {
-  return __async(this, null, function* () {
-    const source = SOURCES[name];
-    const session = yield getSession(name);
-    const ts = nowSeconds();
-    const nonce = randomHex(8);
-    const sig = hmacHex(session.skey, session.sid + "|" + path + "|" + ts + "|" + nonce);
-    const headers = {};
-    headers[source.headerPrefix + "Sid"] = session.sid;
-    headers[source.headerPrefix + "Ts"] = String(ts);
-    headers[source.headerPrefix + "Nonce"] = nonce;
-    headers[source.headerPrefix + "Sig"] = sig;
-    headers["Accept"] = "application/json, text/plain, */*";
-    headers["User-Agent"] = USER_AGENT;
-    return headers;
-  });
-}
-function clearSession(name) {
-  sessions[name] = null;
-}
 
 // src/atlantic/utils.js
+function log(message) {
+  try {
+    console.log("[Atlantic] " + message);
+  } catch (error) {
+  }
+}
+function briefUrl(url) {
+  const text = String(url || "");
+  return text.length > 80 ? text.slice(0, 80) + "..." : text;
+}
+function keysOf2(data) {
+  if (!data || typeof data !== "object")
+    return "none";
+  return Object.keys(data).join(",") || "none";
+}
+function summarise(data) {
+  if (!data || typeof data !== "object")
+    return String(data);
+  const parts = [];
+  if (data.found !== void 0)
+    parts.push("found=" + data.found);
+  if (data.renew !== void 0)
+    parts.push("renew=" + data.renew);
+  if (data.format || data.type)
+    parts.push("format=" + (data.format || data.type));
+  if (data.source)
+    parts.push("upstream=" + data.source);
+  if (Array.isArray(data.availableSources)) {
+    parts.push("available=[" + data.availableSources.join(",") + "]");
+  }
+  if (data.title)
+    parts.push('title="' + data.title + '"');
+  return parts.length ? parts.join(" ") : "keys=" + keysOf2(data);
+}
 function fetchText(url, options, timeoutMs) {
   return __async(this, null, function* () {
     let timer = null;
@@ -385,6 +256,7 @@ function fetchText(url, options, timeoutMs) {
       const text = yield response.text();
       return { ok: response.ok, status: response.status, text };
     } catch (error) {
+      log("network error after " + timeoutMs + "ms: " + briefUrl(url) + " (" + error.message + ")");
       return { ok: false, status: 0, text: "", error: error.message };
     } finally {
       if (timer)
@@ -526,19 +398,30 @@ function loadMaster(url, timeoutMs) {
   return __async(this, null, function* () {
     const headers = playbackHeaders();
     const result = yield fetchWithRetry(url, { headers }, timeoutMs, 2);
-    if (!result.ok || !looksLikePlaylist(result.text))
+    if (!result.ok) {
+      log("master playlist HTTP " + result.status + " " + briefUrl(url));
       return null;
+    }
+    if (!looksLikePlaylist(result.text)) {
+      log("master playlist is NOT HLS (got " + result.text.length + " bytes of " + (result.text.indexOf("<") === 0 ? "HTML" : "unknown") + ") \u2014 headers likely stripped");
+      return null;
+    }
     const parsed = parseMasterPlaylist(result.text, url);
-    if (!parsed.variants.length)
+    if (!parsed.variants.length) {
+      log("master playlist has no variants: " + briefUrl(url));
       return null;
+    }
+    log("master ok: " + parsed.variants.length + " variants, separateAudio=" + parsed.hasSeparateAudio + ", top=" + qualityBadge(parsed.variants[0].height));
     return { headers, variants: parsed.variants, hasSeparateAudio: parsed.hasSeparateAudio };
   });
 }
 function variantIsPlayable(url, headers, timeoutMs) {
   return __async(this, null, function* () {
     const result = yield fetchWithRetry(url, { headers }, timeoutMs, 2);
-    if (!result.ok)
+    if (!result.ok) {
+      log("variant probe HTTP " + result.status + " " + briefUrl(url));
       return false;
+    }
     return result.text.indexOf("#EXTINF") !== -1 || looksLikePlaylist(result.text);
   });
 }
@@ -550,11 +433,13 @@ function getTmdbMeta(tmdbId, mediaType) {
     const data = result.data || {};
     const external = data.external_ids || {};
     const date = data.release_date || data.first_air_date || "";
-    return {
+    const meta = {
       title: data.title || data.name || data.original_title || data.original_name || "",
       year: date ? String(date).slice(0, 4) : "",
       imdbId: external.imdb_id || data.imdb_id || ""
     };
+    log("tmdb " + type + "/" + tmdbId + ' -> "' + meta.title + '" (' + (meta.year || "?") + "), imdb=" + (meta.imdbId || "NONE"));
+    return meta;
   });
 }
 function languageNameToCode(name) {
@@ -635,6 +520,176 @@ function buildStreamTitle(meta, label, quality, season, episode) {
   return "Atlantic | " + label + " " + quality + " | " + title;
 }
 
+// src/atlantic/gate.js
+var SOURCES = {
+  aphrodite: APHRODITE,
+  artemis: ARTEMIS
+};
+var sessions = {};
+var pending = {};
+var EXPIRY_SKEW_SECONDS = 60;
+var HANDSHAKE_TIMEOUT_MS = 12e3;
+function randomHex(bytes) {
+  const out = [];
+  const webCrypto = globalThis.crypto;
+  if (webCrypto && typeof webCrypto.getRandomValues === "function") {
+    const buffer = new Uint8Array(bytes);
+    try {
+      webCrypto.getRandomValues(buffer);
+      for (let i = 0; i < buffer.length; i++) {
+        out.push(("0" + buffer[i].toString(16)).slice(-2));
+      }
+      return out.join("");
+    } catch (error) {
+    }
+  }
+  for (let i = 0; i < bytes; i++) {
+    out.push(("0" + Math.floor(Math.random() * 256).toString(16)).slice(-2));
+  }
+  return out.join("");
+}
+function nowSeconds() {
+  return Math.floor(Date.now() / 1e3);
+}
+function hmacHex(keyHex, message) {
+  return import_crypto_js.default.HmacSHA256(message, import_crypto_js.default.enc.Hex.parse(keyHex)).toString(import_crypto_js.default.enc.Hex);
+}
+function hexToUtf8(hex) {
+  return import_crypto_js.default.enc.Hex.parse(hex).toString(import_crypto_js.default.enc.Utf8);
+}
+function decryptHandshakePayload(keyHex, payloadHex) {
+  const raw = String(payloadHex || "");
+  if (raw.length < 24 + 32 + 32)
+    return "";
+  const ivHex = raw.slice(0, 24);
+  const bodyHex = raw.slice(24);
+  const dataHex = bodyHex.slice(0, bodyHex.length - 32);
+  const key = import_crypto_js.default.enc.Hex.parse(keyHex);
+  const zeros = import_crypto_js.default.enc.Hex.parse(new Array(dataHex.length + 1).join("0"));
+  const keystream = import_crypto_js.default.AES.encrypt(zeros, key, {
+    iv: import_crypto_js.default.enc.Hex.parse(ivHex + "00000002"),
+    mode: import_crypto_js.default.mode.CTR,
+    padding: import_crypto_js.default.pad.NoPadding
+  }).ciphertext.toString(import_crypto_js.default.enc.Hex);
+  let plainHex = "";
+  for (let i = 0; i < dataHex.length; i += 2) {
+    const a = parseInt(dataHex.substr(i, 2), 16);
+    const b = parseInt(keystream.substr(i, 2) || "0", 16);
+    plainHex += ("0" + (a ^ b).toString(16)).slice(-2);
+  }
+  return hexToUtf8(plainHex);
+}
+function fetchWithTimeout(url, options, timeoutMs) {
+  return __async(this, null, function* () {
+    let timer = null;
+    try {
+      return yield Promise.race([
+        fetch(url, options),
+        new Promise((resolve, reject) => {
+          timer = setTimeout(() => reject(new Error("Handshake timed out")), timeoutMs);
+        })
+      ]);
+    } finally {
+      if (timer)
+        clearTimeout(timer);
+    }
+  });
+}
+function handshake(name) {
+  return __async(this, null, function* () {
+    const source = SOURCES[name];
+    const ts = nowSeconds();
+    const nonce = randomHex(8);
+    const sig = hmacHex(source.keyHex, source.code + "|" + ts + "|" + nonce);
+    log(name + ": handshake POST " + briefUrl(source.base + source.handshakePath));
+    const response = yield fetchWithTimeout(
+      source.base + source.handshakePath,
+      {
+        method: "POST",
+        headers: {
+          "Accept": "application/json, text/plain, */*",
+          "Content-Type": "application/json",
+          "Origin": SITE_ORIGIN,
+          "Referer": SITE_ORIGIN + "/",
+          "User-Agent": USER_AGENT
+        },
+        body: JSON.stringify({ c: source.code, ts, n: nonce, s: sig })
+      },
+      HANDSHAKE_TIMEOUT_MS
+    );
+    if (!response.ok) {
+      log(name + ": handshake HTTP " + response.status + " (gate rejected the signature)");
+      throw new Error(name + " handshake failed (HTTP " + response.status + ")");
+    }
+    const text = yield response.text();
+    let payload = null;
+    try {
+      payload = JSON.parse(text);
+    } catch (error) {
+      payload = null;
+    }
+    if (!payload || !payload.d) {
+      log(name + ": handshake returned no payload (body starts: " + String(text).slice(0, 60) + ")");
+      throw new Error(name + " handshake returned no payload");
+    }
+    let session = null;
+    try {
+      session = JSON.parse(decryptHandshakePayload(source.keyHex, payload.d));
+    } catch (error) {
+      session = null;
+    }
+    if (!session || !session.sid || !session.skey) {
+      log(name + ": handshake payload could NOT be decrypted (crypto-js unavailable?)");
+      throw new Error(name + " handshake payload could not be decrypted");
+    }
+    log(name + ": handshake ok, session expires in " + (session.exp ? Number(session.exp) - nowSeconds() + "s" : "unknown"));
+    return { sid: String(session.sid), skey: String(session.skey), exp: Number(session.exp) || 0 };
+  });
+}
+function getSession(name) {
+  return __async(this, null, function* () {
+    const current = sessions[name];
+    if (current && (!current.exp || current.exp - EXPIRY_SKEW_SECONDS > nowSeconds())) {
+      return current;
+    }
+    if (!pending[name]) {
+      pending[name] = handshake(name).then(
+        (session) => {
+          sessions[name] = session;
+          pending[name] = null;
+          return session;
+        },
+        (error) => {
+          sessions[name] = null;
+          pending[name] = null;
+          throw error;
+        }
+      );
+    }
+    return pending[name];
+  });
+}
+function signHeaders(name, path) {
+  return __async(this, null, function* () {
+    const source = SOURCES[name];
+    const session = yield getSession(name);
+    const ts = nowSeconds();
+    const nonce = randomHex(8);
+    const sig = hmacHex(session.skey, session.sid + "|" + path + "|" + ts + "|" + nonce);
+    const headers = {};
+    headers[source.headerPrefix + "Sid"] = session.sid;
+    headers[source.headerPrefix + "Ts"] = String(ts);
+    headers[source.headerPrefix + "Nonce"] = nonce;
+    headers[source.headerPrefix + "Sig"] = sig;
+    headers["Accept"] = "application/json, text/plain, */*";
+    headers["User-Agent"] = USER_AGENT;
+    return headers;
+  });
+}
+function clearSession(name) {
+  sessions[name] = null;
+}
+
 // src/atlantic/aphrodite.js
 var API_TIMEOUT_MS = 12e3;
 var PLAYLIST_TIMEOUT_MS = 1e4;
@@ -654,33 +709,48 @@ function request(path) {
 function fetchAphrodite(tmdbId, mediaType, season, episode) {
   return __async(this, null, function* () {
     const path = buildPath(tmdbId, mediaType, season, episode);
+    log("aphrodite: GET " + path);
     let response;
     try {
       response = yield request(path);
     } catch (error) {
+      log("aphrodite: request threw (" + error.message + ")");
       return null;
     }
+    log("aphrodite: API HTTP " + response.status + " -> " + summarise(response.data));
     if (response.data && response.data.renew) {
+      log("aphrodite: session expired, re-handshaking and retrying once");
       clearSession("aphrodite");
       try {
         response = yield request(path);
       } catch (error) {
+        log("aphrodite: retry threw (" + error.message + ")");
         return null;
       }
+      log("aphrodite: retry HTTP " + response.status + " -> " + summarise(response.data));
     }
     const data = response.data;
-    if (!data || !data.found)
-      return null;
-    const url = data.hls || (data.type === "hls" || data.format === "hls" ? data.url : "");
-    if (!url)
-      return null;
-    const playlist = yield loadMaster(url, PLAYLIST_TIMEOUT_MS);
-    if (!playlist)
-      return null;
-    const top = playlist.variants[0];
-    if (top && !(yield variantIsPlayable(top.url, playlist.headers, PLAYLIST_TIMEOUT_MS))) {
+    if (!data || !data.found) {
+      log("aphrodite: dropped \u2014 source has no stream for this title");
       return null;
     }
+    const url = data.hls || (data.type === "hls" || data.format === "hls" ? data.url : "");
+    if (!url) {
+      log("aphrodite: dropped \u2014 response had no HLS url (keys: " + keysOf(data) + ")");
+      return null;
+    }
+    log("aphrodite: playlist " + briefUrl(url));
+    const playlist = yield loadMaster(url, PLAYLIST_TIMEOUT_MS);
+    if (!playlist) {
+      log("aphrodite: dropped \u2014 master playlist unusable");
+      return null;
+    }
+    const top = playlist.variants[0];
+    if (top && !(yield variantIsPlayable(top.url, playlist.headers, PLAYLIST_TIMEOUT_MS))) {
+      log("aphrodite: dropped \u2014 top variant (" + top.height + "p) is not being served");
+      return null;
+    }
+    log("aphrodite: OK \u2014 " + playlist.variants.length + " renditions, top " + (top ? top.height + "p" : "n/a"));
     return {
       label: APHRODITE.label,
       url,
@@ -713,30 +783,43 @@ function request2(path) {
 function fetchArtemis(tmdbId, mediaType, season, episode) {
   return __async(this, null, function* () {
     const path = buildPath2(tmdbId, mediaType, season, episode);
+    log("artemis: GET " + path);
     let response;
     try {
       response = yield request2(path);
     } catch (error) {
+      log("artemis: request threw (" + error.message + ")");
       return null;
     }
+    log("artemis: API HTTP " + response.status + " -> " + summarise(response.data));
     if (response.status === 401 && response.data && response.data.renew) {
+      log("artemis: session expired, re-handshaking and retrying once");
       clearSession("artemis");
       try {
         response = yield request2(path);
       } catch (error) {
+        log("artemis: retry threw (" + error.message + ")");
         return null;
       }
+      log("artemis: retry HTTP " + response.status + " -> " + summarise(response.data));
     }
     const data = response.data;
-    if (!data || !data.found || !data.url)
-      return null;
-    const playlist = yield loadMaster(data.url, PLAYLIST_TIMEOUT_MS2);
-    if (!playlist)
-      return null;
-    const top = playlist.variants[0];
-    if (top && !(yield variantIsPlayable(top.url, playlist.headers, PLAYLIST_TIMEOUT_MS2))) {
+    if (!data || !data.found || !data.url) {
+      log("artemis: dropped \u2014 no stream for this title");
       return null;
     }
+    log("artemis: playlist " + briefUrl(data.url));
+    const playlist = yield loadMaster(data.url, PLAYLIST_TIMEOUT_MS2);
+    if (!playlist) {
+      log("artemis: dropped \u2014 master playlist unusable");
+      return null;
+    }
+    const top = playlist.variants[0];
+    if (top && !(yield variantIsPlayable(top.url, playlist.headers, PLAYLIST_TIMEOUT_MS2))) {
+      log('artemis: dropped \u2014 upstream "' + (data.source || "?") + '" is dead (top variant ' + top.height + "p not served)");
+      return null;
+    }
+    log("artemis: OK via " + (data.source || "?") + " \u2014 " + playlist.variants.length + " renditions, top " + (top ? top.height + "p" : "n/a"));
     return {
       label: ARTEMIS.label,
       url: data.url,
@@ -754,8 +837,10 @@ function fetchGranite(tmdbId, mediaType, season, episode) {
   return __async(this, null, function* () {
     const url = mediaType === "tv" ? GRANITE_BASE + "/tv/" + encodeURIComponent(tmdbId) + "/" + encodeURIComponent(season || 1) + "/" + encodeURIComponent(episode || 1) : GRANITE_BASE + "/movie/" + encodeURIComponent(tmdbId);
     const result = yield fetchJson(url, { "User-Agent": USER_AGENT }, SUBTITLE_TIMEOUT_MS);
-    if (!result.ok || !Array.isArray(result.data))
+    if (!result.ok || !Array.isArray(result.data)) {
+      log("granite: unavailable (HTTP " + result.status + ")");
       return [];
+    }
     const tracks = [];
     for (let i = 0; i < result.data.length; i++) {
       const item = result.data[i];
@@ -780,8 +865,10 @@ function fetchGranite(tmdbId, mediaType, season, episode) {
 }
 function fetchNatsuki(imdbId, season, episode) {
   return __async(this, null, function* () {
-    if (!imdbId)
+    if (!imdbId) {
+      log("natsuki: skipped \u2014 no IMDb id (it ignores tmdbId)");
       return [];
+    }
     const parts = ["imdbId=" + encodeURIComponent(imdbId)];
     if (season && episode) {
       parts.push("season=" + encodeURIComponent(season));
@@ -793,8 +880,10 @@ function fetchNatsuki(imdbId, season, episode) {
       { headers },
       SUBTITLE_TIMEOUT_MS
     );
-    if (!result.ok || !result.data || !Array.isArray(result.data.subtitles))
+    if (!result.ok || !result.data || !Array.isArray(result.data.subtitles)) {
+      log("natsuki: unavailable (HTTP " + result.status + ")");
       return [];
+    }
     const tracks = [];
     for (let i = 0; i < result.data.subtitles.length; i++) {
       const item = result.data.subtitles[i];
@@ -816,8 +905,10 @@ function fetchNatsuki(imdbId, season, episode) {
 }
 function fetchOpenSubtitles(imdbId, season, episode) {
   return __async(this, null, function* () {
-    if (!imdbId)
+    if (!imdbId) {
+      log("opensubs: skipped \u2014 no IMDb id");
       return [];
+    }
     const id = String(imdbId).replace(/^tt/, "");
     const hasEpisode = Boolean(season && episode);
     const path = "/search/" + (hasEpisode ? "episode-" + encodeURIComponent(episode) + "/" : "") + "imdbid-" + encodeURIComponent(id) + (hasEpisode ? "/season-" + encodeURIComponent(season) : "");
@@ -827,8 +918,10 @@ function fetchOpenSubtitles(imdbId, season, episode) {
       "X-User-Agent": OPENSUBS_USER_AGENT
     };
     const result = yield fetchJson(OPENSUBS_BASE + path, { headers }, SUBTITLE_TIMEOUT_MS);
-    if (!result.ok || !Array.isArray(result.data))
+    if (!result.ok || !Array.isArray(result.data)) {
+      log("opensubs: unavailable (HTTP " + result.status + ")");
       return [];
+    }
     const tracks = [];
     for (let i = 0; i < result.data.length; i++) {
       const item = result.data[i];
@@ -853,17 +946,33 @@ function fetchSubtitles(options, settings) {
   return __async(this, null, function* () {
     const jobs = [];
     if (settings.enableGranite) {
-      jobs.push(fetchGranite(options.tmdbId, options.mediaType, options.season, options.episode));
+      jobs.push({
+        label: "granite",
+        job: fetchGranite(options.tmdbId, options.mediaType, options.season, options.episode)
+      });
     }
     if (settings.enableNatsuki) {
-      jobs.push(fetchNatsuki(options.imdbId, options.season, options.episode));
+      jobs.push({
+        label: "natsuki",
+        job: fetchNatsuki(options.imdbId, options.season, options.episode)
+      });
     }
     if (settings.enableOpenSubtitles) {
-      jobs.push(fetchOpenSubtitles(options.imdbId, options.season, options.episode));
+      jobs.push({
+        label: "opensubs",
+        job: fetchOpenSubtitles(options.imdbId, options.season, options.episode)
+      });
     }
     if (!jobs.length)
       return [];
-    const settled = yield Promise.all(jobs.map((job) => job.catch(() => [])));
+    const settled = yield Promise.all(jobs.map((entry) => entry.job.catch((error) => {
+      log(entry.label + ": threw (" + error.message + ")");
+      return [];
+    })));
+    for (let i = 0; i < settled.length; i++) {
+      const list = Array.isArray(settled[i]) ? settled[i] : [];
+      log("subtitles/" + jobs[i].label + ": " + list.length + " track(s)");
+    }
     return settled.map((list) => Array.isArray(list) ? list : []);
   });
 }
@@ -947,38 +1056,62 @@ function buildStreams(source, meta, season, episode, subtitles) {
 }
 function getStreams(tmdbId, mediaType, season, episode) {
   return __async(this, null, function* () {
-    const settings = readSettings();
-    const type = mediaType === "tv" ? "tv" : "movie";
-    const seasonNumber = type === "tv" ? Number(season) || 1 : null;
-    const episodeNumber = type === "tv" ? Number(episode) || 1 : null;
-    const meta = yield getTmdbMeta(tmdbId, type);
-    const subtitleJob = fetchSubtitles(
-      {
-        tmdbId,
-        mediaType: type,
-        season: seasonNumber,
-        episode: episodeNumber,
-        imdbId: meta.imdbId
-      },
-      settings
-    ).catch(() => []);
-    const aphroditeJob = settings.enableAphrodite ? fetchAphrodite(tmdbId, type, seasonNumber, episodeNumber).catch(() => null) : Promise.resolve(null);
-    const artemisJob = settings.enableArtemis ? fetchArtemis(tmdbId, type, seasonNumber, episodeNumber).catch(() => null) : Promise.resolve(null);
-    const results = yield Promise.all([aphroditeJob, artemisJob, subtitleJob]);
-    const sources = [results[0], results[1]].filter(Boolean);
-    const subtitles = mergeSubtitles(
-      results[2] || [],
-      settings.maxSubtitlesPerLanguage,
-      settings.maxSubtitlesTotal
-    );
-    const streams = [];
-    for (let i = 0; i < sources.length; i++) {
-      const built = buildStreams(sources[i], meta, seasonNumber, episodeNumber, subtitles);
-      for (let j = 0; j < built.length; j++)
-        streams.push(built[j]);
+    try {
+      const settings = readSettings();
+      const type = mediaType === "tv" ? "tv" : "movie";
+      const seasonNumber = type === "tv" ? Number(season) || 1 : null;
+      const episodeNumber = type === "tv" ? Number(episode) || 1 : null;
+      log("--- getStreams tmdb=" + tmdbId + " type=" + type + (type === "tv" ? " S" + seasonNumber + "E" + episodeNumber : "") + " ---");
+      log("settings: aphrodite=" + settings.enableAphrodite + " artemis=" + settings.enableArtemis + " granite=" + settings.enableGranite + " natsuki=" + settings.enableNatsuki + " opensubs=" + settings.enableOpenSubtitles + " maxPerLanguage=" + settings.maxSubtitlesPerLanguage);
+      const meta = yield getTmdbMeta(tmdbId, type);
+      const subtitleJob = fetchSubtitles(
+        {
+          tmdbId,
+          mediaType: type,
+          season: seasonNumber,
+          episode: episodeNumber,
+          imdbId: meta.imdbId
+        },
+        settings
+      ).catch((error) => {
+        log("subtitles failed: " + error.message);
+        return [];
+      });
+      const aphroditeJob = settings.enableAphrodite ? fetchAphrodite(tmdbId, type, seasonNumber, episodeNumber).catch((error) => {
+        log("aphrodite threw: " + error.message);
+        return null;
+      }) : Promise.resolve(null);
+      const artemisJob = settings.enableArtemis ? fetchArtemis(tmdbId, type, seasonNumber, episodeNumber).catch((error) => {
+        log("artemis threw: " + error.message);
+        return null;
+      }) : Promise.resolve(null);
+      const results = yield Promise.all([aphroditeJob, artemisJob, subtitleJob]);
+      const sources = [results[0], results[1]].filter(Boolean);
+      if (!sources.length) {
+        log("RESULT: 0 streams \u2014 no source resolved. If you see network errors above, the device could not reach cdn.hls.lol / stellar.hls.lol.");
+        return [];
+      }
+      const subtitles = mergeSubtitles(
+        results[2] || [],
+        settings.maxSubtitlesPerLanguage,
+        settings.maxSubtitlesTotal
+      );
+      const streams = [];
+      for (let i = 0; i < sources.length; i++) {
+        const built = buildStreams(sources[i], meta, seasonNumber, episodeNumber, subtitles);
+        for (let j = 0; j < built.length; j++)
+          streams.push(built[j]);
+      }
+      streams.sort((a, b) => rankQuality(b.quality) - rankQuality(a.quality));
+      log("RESULT: " + streams.length + " stream(s) from " + sources.map((source) => source.label).join(" + ") + ", " + subtitles.length + " subtitle track(s)");
+      for (let i = 0; i < streams.length; i++) {
+        log("  #" + (i + 1) + " [" + streams[i].quality + "] " + streams[i].name);
+      }
+      return streams;
+    } catch (error) {
+      log("FATAL: " + (error && error.message ? error.message : error));
+      return [];
     }
-    streams.sort((a, b) => rankQuality(b.quality) - rankQuality(a.quality));
-    return streams;
   });
 }
 function onSettings() {

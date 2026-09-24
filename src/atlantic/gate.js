@@ -1,5 +1,6 @@
 import CryptoJS from 'crypto-js';
 import { APHRODITE, ARTEMIS, SITE_ORIGIN, USER_AGENT } from './constants.js';
+import { briefUrl, log } from './utils.js';
 
 /**
  * Atlantic's request gate.
@@ -120,6 +121,8 @@ async function handshake(name) {
     const nonce = randomHex(8);
     const sig = hmacHex(source.keyHex, source.code + '|' + ts + '|' + nonce);
 
+    log(name + ': handshake POST ' + briefUrl(source.base + source.handshakePath));
+
     const response = await fetchWithTimeout(
         source.base + source.handshakePath,
         {
@@ -137,6 +140,7 @@ async function handshake(name) {
     );
 
     if (!response.ok) {
+        log(name + ': handshake HTTP ' + response.status + ' (gate rejected the signature)');
         throw new Error(name + ' handshake failed (HTTP ' + response.status + ')');
     }
 
@@ -148,6 +152,7 @@ async function handshake(name) {
         payload = null;
     }
     if (!payload || !payload.d) {
+        log(name + ': handshake returned no payload (body starts: ' + String(text).slice(0, 60) + ')');
         throw new Error(name + ' handshake returned no payload');
     }
 
@@ -158,8 +163,14 @@ async function handshake(name) {
         session = null;
     }
     if (!session || !session.sid || !session.skey) {
+        // Almost always means crypto-js is missing or the AES-CTR emulation
+        // misbehaved, rather than a server-side problem.
+        log(name + ': handshake payload could NOT be decrypted (crypto-js unavailable?)');
         throw new Error(name + ' handshake payload could not be decrypted');
     }
+
+    log(name + ': handshake ok, session expires in ' +
+        (session.exp ? (Number(session.exp) - nowSeconds()) + 's' : 'unknown'));
 
     return { sid: String(session.sid), skey: String(session.skey), exp: Number(session.exp) || 0 };
 }

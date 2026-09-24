@@ -1,6 +1,6 @@
 import { APHRODITE } from './constants.js';
 import { signHeaders, clearSession } from './gate.js';
-import { fetchJsonWithRetry, loadMaster, variantIsPlayable } from './utils.js';
+import { briefUrl, fetchJsonWithRetry, loadMaster, log, summarise, variantIsPlayable } from './utils.js';
 
 /**
  * Aphrodite — Atlantic's primary source.
@@ -35,39 +35,59 @@ async function request(path) {
 /** Returns a `{ url, headers, playlist }` descriptor, or null when unavailable. */
 export async function fetchAphrodite(tmdbId, mediaType, season, episode) {
     const path = buildPath(tmdbId, mediaType, season, episode);
+    log('aphrodite: GET ' + path);
 
     let response;
     try {
         response = await request(path);
     } catch (error) {
+        log('aphrodite: request threw (' + error.message + ')');
         return null;
     }
+    log('aphrodite: API HTTP ' + response.status + ' -> ' + summarise(response.data));
 
     // A dead session answers exactly like a title the source has never heard of,
     // so `renew` is the only signal that it is worth retrying.
     if (response.data && response.data.renew) {
+        log('aphrodite: session expired, re-handshaking and retrying once');
         clearSession('aphrodite');
         try {
             response = await request(path);
         } catch (error) {
+            log('aphrodite: retry threw (' + error.message + ')');
             return null;
         }
+        log('aphrodite: retry HTTP ' + response.status + ' -> ' + summarise(response.data));
     }
 
     const data = response.data;
-    if (!data || !data.found) return null;
+    if (!data || !data.found) {
+        log('aphrodite: dropped — source has no stream for this title');
+        return null;
+    }
 
     const url = data.hls || ((data.type === 'hls' || data.format === 'hls') ? data.url : '');
-    if (!url) return null;
+    if (!url) {
+        log('aphrodite: dropped — response had no HLS url (keys: ' + keysOf(data) + ')');
+        return null;
+    }
+    log('aphrodite: playlist ' + briefUrl(url));
 
     const playlist = await loadMaster(url, PLAYLIST_TIMEOUT_MS);
-    if (!playlist) return null;
+    if (!playlist) {
+        log('aphrodite: dropped — master playlist unusable');
+        return null;
+    }
 
     // Confirm the top rendition is really served before advertising the source.
     const top = playlist.variants[0];
     if (top && !(await variantIsPlayable(top.url, playlist.headers, PLAYLIST_TIMEOUT_MS))) {
+        log('aphrodite: dropped — top variant (' + top.height + 'p) is not being served');
         return null;
     }
+
+    log('aphrodite: OK — ' + playlist.variants.length + ' renditions, top ' +
+        (top ? top.height + 'p' : 'n/a'));
 
     return {
         label: APHRODITE.label,

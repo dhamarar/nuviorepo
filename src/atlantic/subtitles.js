@@ -9,6 +9,7 @@ import {
     fetchJson,
     languageDisplayName,
     languageNameToCode,
+    log,
     natsukiHeaders
 } from './utils.js';
 
@@ -42,7 +43,10 @@ async function fetchGranite(tmdbId, mediaType, season, episode) {
         : GRANITE_BASE + '/movie/' + encodeURIComponent(tmdbId);
 
     const result = await fetchJson(url, { 'User-Agent': USER_AGENT }, SUBTITLE_TIMEOUT_MS);
-    if (!result.ok || !Array.isArray(result.data)) return [];
+    if (!result.ok || !Array.isArray(result.data)) {
+        log('granite: unavailable (HTTP ' + result.status + ')');
+        return [];
+    }
 
     const tracks = [];
     for (let i = 0; i < result.data.length; i++) {
@@ -69,7 +73,10 @@ async function fetchGranite(tmdbId, mediaType, season, episode) {
 
 /** Natsuki — keyed by IMDb id, serves SRT, requires Atlantic's Origin/Referer. */
 async function fetchNatsuki(imdbId, season, episode) {
-    if (!imdbId) return [];
+    if (!imdbId) {
+        log('natsuki: skipped — no IMDb id (it ignores tmdbId)');
+        return [];
+    }
 
     const parts = ['imdbId=' + encodeURIComponent(imdbId)];
     if (season && episode) {
@@ -83,7 +90,10 @@ async function fetchNatsuki(imdbId, season, episode) {
         { headers: headers },
         SUBTITLE_TIMEOUT_MS
     );
-    if (!result.ok || !result.data || !Array.isArray(result.data.subtitles)) return [];
+    if (!result.ok || !result.data || !Array.isArray(result.data.subtitles)) {
+        log('natsuki: unavailable (HTTP ' + result.status + ')');
+        return [];
+    }
 
     const tracks = [];
     for (let i = 0; i < result.data.subtitles.length; i++) {
@@ -106,7 +116,10 @@ async function fetchNatsuki(imdbId, season, episode) {
 
 /** OpenSubtitles (legacy REST) — keyed by IMDb id, serves gzipped SRT. */
 async function fetchOpenSubtitles(imdbId, season, episode) {
-    if (!imdbId) return [];
+    if (!imdbId) {
+        log('opensubs: skipped — no IMDb id');
+        return [];
+    }
 
     const id = String(imdbId).replace(/^tt/, '');
     const hasEpisode = Boolean(season && episode);
@@ -122,7 +135,10 @@ async function fetchOpenSubtitles(imdbId, season, episode) {
     };
 
     const result = await fetchJson(OPENSUBS_BASE + path, { headers: headers }, SUBTITLE_TIMEOUT_MS);
-    if (!result.ok || !Array.isArray(result.data)) return [];
+    if (!result.ok || !Array.isArray(result.data)) {
+        log('opensubs: unavailable (HTTP ' + result.status + ')');
+        return [];
+    }
 
     const tracks = [];
     for (let i = 0; i < result.data.length; i++) {
@@ -159,17 +175,35 @@ export async function fetchSubtitles(options, settings) {
     const jobs = [];
 
     if (settings.enableGranite) {
-        jobs.push(fetchGranite(options.tmdbId, options.mediaType, options.season, options.episode));
+        jobs.push({
+            label: 'granite',
+            job: fetchGranite(options.tmdbId, options.mediaType, options.season, options.episode)
+        });
     }
     if (settings.enableNatsuki) {
-        jobs.push(fetchNatsuki(options.imdbId, options.season, options.episode));
+        jobs.push({
+            label: 'natsuki',
+            job: fetchNatsuki(options.imdbId, options.season, options.episode)
+        });
     }
     if (settings.enableOpenSubtitles) {
-        jobs.push(fetchOpenSubtitles(options.imdbId, options.season, options.episode));
+        jobs.push({
+            label: 'opensubs',
+            job: fetchOpenSubtitles(options.imdbId, options.season, options.episode)
+        });
     }
 
     if (!jobs.length) return [];
 
-    const settled = await Promise.all(jobs.map(job => job.catch(() => [])));
+    const settled = await Promise.all(jobs.map(entry => entry.job.catch(error => {
+        log(entry.label + ': threw (' + error.message + ')');
+        return [];
+    })));
+
+    for (let i = 0; i < settled.length; i++) {
+        const list = Array.isArray(settled[i]) ? settled[i] : [];
+        log('subtitles/' + jobs[i].label + ': ' + list.length + ' track(s)');
+    }
+
     return settled.map(list => (Array.isArray(list) ? list : []));
 }
