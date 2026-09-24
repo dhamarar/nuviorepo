@@ -1,0 +1,28 @@
+name: validate
+
+# The app reads providers/ straight from this branch, so a stale bundle or a manifest that
+# does not match its provider goes live immediately. This runs the same checks locally as
+# `node scripts/validate.js`, on every push and pull request.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install build dependencies
+        run: npm ci
+
+      - name: Validate manifest and bundles
+        run: node scripts/validate.js

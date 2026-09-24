@@ -1,6 +1,6 @@
 /**
  * cinejoy - Built from src/cinejoy/
- * Generated: 2026-09-21T03:15:24.451Z
+ * Generated: 2026-09-24T02:47:34.511Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -1081,7 +1081,13 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
     console.log(`[Cinejoy] Fetching streams for TMDB: ${cleanTmdb}, Type: ${isTv ? "tv" : "movie"}, S: ${cleanSeason}, E: ${cleanEpisode}`);
     const streams = [];
     const settings = globalThis.SCRAPER_SETTINGS || {};
-    const customResolver = (settings.resolverUrl || "").trim().replace(/\/+$/, "");
+    let customResolver = (settings.resolverUrl || "").trim().replace(/\/+$/, "");
+    if (customResolver && !customResolver.startsWith("http://") && !customResolver.startsWith("https://")) {
+      customResolver = "https://" + customResolver;
+    }
+    if (customResolver) {
+      console.log(`[Cinejoy] Using custom stream resolver: ${customResolver}`);
+    }
     try {
       const domainPromise = resolveDomain();
       const tmdbInfoPromise = getTmdbDetails(cleanTmdb, isTv ? "tv" : "movie");
@@ -1151,6 +1157,8 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
                 }
                 if (parsedFromResolver.length > 0)
                   return parsedFromResolver;
+              } else {
+                console.warn(`[Cinejoy] Custom resolver returned HTTP ${rRes.status} for server ${server}`);
               }
             } catch (resolverErr) {
               console.warn(`[Cinejoy] Custom resolver error for ${server}:`, resolverErr.message);

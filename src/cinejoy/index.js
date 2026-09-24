@@ -97,7 +97,13 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
     const streams = [];
 
     const settings = globalThis.SCRAPER_SETTINGS || {};
-    const customResolver = (settings.resolverUrl || "").trim().replace(/\/+$/, '');
+    let customResolver = (settings.resolverUrl || "").trim().replace(/\/+$/, '');
+    if (customResolver && !customResolver.startsWith('http://') && !customResolver.startsWith('https://')) {
+        customResolver = 'https://' + customResolver;
+    }
+    if (customResolver) {
+        console.log(`[Cinejoy] Using custom stream resolver: ${customResolver}`);
+    }
 
     try {
         // Step 1: Resolve domain and fetch TMDB info concurrently
@@ -182,6 +188,8 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
                                 }
                             }
                             if (parsedFromResolver.length > 0) return parsedFromResolver;
+                        } else {
+                            console.warn(`[Cinejoy] Custom resolver returned HTTP ${rRes.status} for server ${server}`);
                         }
                     } catch (resolverErr) {
                         console.warn(`[Cinejoy] Custom resolver error for ${server}:`, resolverErr.message);

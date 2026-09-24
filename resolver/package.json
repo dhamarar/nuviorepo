@@ -1,0 +1,10 @@
+{
+  "name": "cinejoy-stream-resolver",
+  "version": "1.0.0",
+  "description": "Standalone Cinejoy Stream Resolver for Nuvio (Node.js & Vercel)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {}
+}

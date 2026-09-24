@@ -57,17 +57,17 @@ function stripBanner(text) {
     return body.replace(/\r\n/g, '\n');
 }
 
-async function buildProvider(providerName) {
-    const providerDir = path.join(srcDir, providerName);
-    const entryPoint = path.join(providerDir, 'index.js');
-    const outFile = path.join(outDir, `${providerName}.js`);
+/**
+ * Compile one provider to a scratch file and return the generated code.
+ *
+ * This never touches `providers/`, so `scripts/validate.js` can reuse it to compare a
+ * committed bundle against a fresh compile without modifying the working tree.
+ * Returns null when the provider has no src/<name>/index.js.
+ */
+async function compileProvider(providerName) {
+    const entryPoint = path.join(srcDir, providerName, 'index.js');
+    if (!fs.existsSync(entryPoint)) return null;
 
-    if (!fs.existsSync(entryPoint)) {
-        console.warn(`⚠️  Skipping ${providerName}: no src/${providerName}/index.js found`);
-        return false;
-    }
-
-    // Build to a scratch file first so an unchanged provider is never rewritten.
     const scratchFile = path.join(os.tmpdir(), `${providerName}.${process.pid}.cs3build.js`);
 
     try {
@@ -86,24 +86,37 @@ async function buildProvider(providerName) {
             },
             logLevel: 'warning'
         });
+        return fs.readFileSync(scratchFile, 'utf8');
+    } finally {
+        if (fs.existsSync(scratchFile)) fs.unlinkSync(scratchFile);
+    }
+}
 
-        const fresh = fs.readFileSync(scratchFile, 'utf8');
+async function buildProvider(providerName) {
+    const entryPoint = path.join(srcDir, providerName, 'index.js');
+    const outFile = path.join(outDir, `${providerName}.js`);
+
+    if (!fs.existsSync(entryPoint)) {
+        console.warn(`⚠️  Skipping ${providerName}: no src/${providerName}/index.js found`);
+        return false;
+    }
+
+    try {
+        // Built to a scratch file first, so an unchanged provider is never rewritten.
+        const fresh = await compileProvider(providerName);
         const previous = fs.existsSync(outFile) ? fs.readFileSync(outFile, 'utf8') : null;
 
         if (previous !== null && stripBanner(previous) === stripBanner(fresh)) {
-            fs.unlinkSync(scratchFile);
             const sizeKB = (fs.statSync(outFile).size / 1024).toFixed(1);
             console.log(`⏭️  ${providerName}.js (${sizeKB} KB, already up to date)`);
             return true;
         }
 
         fs.writeFileSync(outFile, fresh);
-        fs.unlinkSync(scratchFile);
         const sizeKB = (Buffer.byteLength(fresh) / 1024).toFixed(1);
         console.log(`✅ ${providerName}.js (${sizeKB} KB)`);
         return true;
     } catch (err) {
-        if (fs.existsSync(scratchFile)) fs.unlinkSync(scratchFile);
         console.error(`❌ Failed to build ${providerName}:`, err.message);
         return false;
     }
