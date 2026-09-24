@@ -15,6 +15,11 @@
  *   2. every entry's file exists, loads, and exports getStreams.
  *   3. hasSettings is true if and only if onSettings is exported.
  *   4. every committed bundle is up to date with its src/ (no stale builds).
+ *   5. no provider uses a timer primitive — the Nuvio sandbox has none, so
+ *      `Promise.race([fetch(url), new Promise((_, r) => setTimeout(...))])` throws
+ *      `setTimeout is not defined` synchronously and every request fails with status 0.
+ *      This shipped in four providers and made them return nothing on-device while
+ *      passing locally (Node has timers). Never again.
  */
 
 const fs = require('fs');
@@ -23,6 +28,7 @@ const { execFileSync } = require('child_process');
 
 const REPO = path.join(__dirname, '..');
 const problems = [];
+const warnings = [];
 
 function ok(message) {
     console.log('  \u2713 ' + message);
@@ -107,6 +113,72 @@ function checkEntries(manifest) {
     if (problems.length === 0) ok('every entry resolves, loads and matches its settings flag');
 }
 
+/** Remove comments so prose about `setTimeout` is not mistaken for a call. */
+function stripComments(source) {
+    return source
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/(^|[^:])\/\/.*$/gm, '$1');
+}
+
+/**
+ * The Nuvio sandbox is QuickJS with no timer primitives, so any `setTimeout(...)`
+ * call is a hard bug: it throws synchronously and the request fails with status 0.
+ * Scan both the sources and the generated bundles.
+ */
+function checkSandboxSafety() {
+    section('sandbox safety (no timers)');
+
+    const banned = [
+        ['setTimeout', /\bsetTimeout\s*\(/],
+        ['setInterval', /\bsetInterval\s*\(/],
+        ['clearTimeout', /\bclearTimeout\s*\(/],
+        ['clearInterval', /\bclearInterval\s*\(/],
+        ['setImmediate', /\bsetImmediate\s*\(/],
+        ['queueMicrotask', /\bqueueMicrotask\s*\(/]
+    ];
+
+    const targets = [];
+
+    function collect(dir, filter) {
+        let names;
+        try {
+            names = fs.readdirSync(dir);
+        } catch (error) {
+            return;
+        }
+        names.forEach(function (name) {
+            const full = path.join(dir, name);
+            if (fs.statSync(full).isDirectory()) collect(full, filter);
+            else if (filter(name)) targets.push(full);
+        });
+    }
+
+    collect(path.join(REPO, 'src'), function (n) { return n.endsWith('.js'); });
+    collect(path.join(REPO, 'providers'), function (n) { return n.endsWith('.js'); });
+
+    let hits = 0;
+    targets.forEach(function (file) {
+        const code = stripComments(fs.readFileSync(file, 'utf8'));
+        const rel = path.relative(REPO, file).replace(/\\/g, '/');
+        banned.forEach(function (pair) {
+            const matches = code.match(new RegExp(pair[1].source, 'g'));
+            if (matches) {
+                hits += matches.length;
+                fail(rel + ': uses ' + pair[0] + '() \u2014 the sandbox has no timers, ' +
+                    'so this throws and the request fails with status 0');
+            }
+        });
+        if (/\bnew\s+AbortController\s*\(/.test(code)) {
+            warnings.push(rel + ': uses AbortController, but the fetch polyfill ignores ' +
+                'options.signal, so it cannot cancel anything');
+        }
+    });
+
+    if (hits === 0) {
+        ok('no timer primitives in ' + targets.length + ' file(s) (src/ + providers/)');
+    }
+}
+
 function checkBundleFreshness() {
     section('bundle freshness');
 
@@ -147,9 +219,14 @@ function checkBundleFreshness() {
 function main() {
     const manifest = readManifest();
     if (manifest) checkEntries(manifest);
+    checkSandboxSafety();
     checkBundleFreshness();
 
     console.log('');
+    if (warnings.length > 0) {
+        warnings.forEach(function (w) { console.log('  \u26a0 ' + w); });
+        console.log('');
+    }
     if (problems.length === 0) {
         console.log('All checks passed.');
         return;
