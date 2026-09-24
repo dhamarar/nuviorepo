@@ -27,7 +27,9 @@ This is a comprehensive guide to developing streaming providers for the Nuvio ap
 
 A **Provider** in Nuvio is a JavaScript module that finds video streams for movies and TV shows. When a user selects a title (e.g., "Inception"), the app calls your provider with the movie's TMDB ID. Your provider's job is to search the web (programmatically) and return a list of playable video URLs.
 
-Providers run locally on the user's device inside the Nuvio app's JavaScript engine (Hermes).
+Providers run locally on the user's device inside the Nuvio app's plugin sandbox, a
+**QuickJS** engine embedded in the Android app (`libquickjs.so`, bound via
+`com.dokar.quickjs`, driven by the app's `PluginRuntime`).
 
 ---
 
@@ -43,10 +45,20 @@ To develop providers, you need:
 ## Architecture Overview
 
 Nuvio providers operate in a specific environment:
-- **Engine**: Hermes (React Native).
+- **Engine**: QuickJS, inside a Kotlin/Compose Multiplatform Android app. It is *not*
+  React Native — there is no Hermes and no `ReactNativeJS` log tag.
 - **Environment**: "Neutral" (neither distinct Browser nor Node.js, but supports common APIs like `fetch`).
 - **Restrictions**: 
   - Cannot use native Node.js modules like `fs` or `path` inside the provider code.
+  - **No timers.** `setTimeout`, `setInterval`, `clearTimeout`, `setImmediate` and
+    `queueMicrotask` are all undefined, so the usual
+    `Promise.race([fetch(url), new Promise((_, r) => setTimeout(...))])` timeout idiom
+    throws `setTimeout is not defined` immediately and every request fails. Call
+    `fetch` directly; the native bridge applies its own 60 s connect timeout.
+  - `AbortController`/`AbortSignal` exist but the `fetch` polyfill ignores
+    `options.signal`, so they cannot cancel a request.
+  - `TextDecoder` and `TextEncoder` are empty stubs; `WebAssembly` is a placeholder.
+    `crypto.subtle`, `CryptoJS`, `Date.now()`, `Promise`, `JSON` and `Math` all work.
   - `async/await` has limited support in dynamically loaded code, so we use a build step to transpile it.
 
 ### File Structure
@@ -247,7 +259,7 @@ Nuvio supports external subtitles in all formats (including VTT, SRT, ASS, SSA, 
 
 ### Async/Await & Transpilation
 
-**The Problem:** The Nuvio app loads plugins dynamically. The Hermes engine does not support `async` functions inside dynamically evaluated code.
+**The Problem:** The Nuvio app loads plugins dynamically. The QuickJS engine has limited support for `async` functions inside dynamically evaluated code.
 
 **The Solution:** The `build.js` script automatically solves this!
 - It converts your `async/await` code into Generator functions.
@@ -384,8 +396,16 @@ node test-streamflix.js
 ```
 
 ### Debugging Tips
-- Use `console.log()` liberally. These logs appear in the terminal when running the test script, and in the Metro bundler output when running in the app.
+- Use `console.log()` liberally. These logs appear in the terminal when running the test script,
+  and **on a real device they go to Android's logcat under the `PluginRuntime` tag**:
+  ```bash
+  adb logcat -c && adb logcat -s PluginRuntime
+  ```
+  Each line is prefixed with `Plugin:<manifest-url>:<id> `, so the provider is identifiable.
+  (`console.warn`/`console.error` land on the same tag at W/E.)
 - Check headers. 90% of failures are due to missing `User-Agent` or `Referer` headers.
+- **Never use `setTimeout`** — see the engine restrictions above. Grep for it before shipping:
+  `grep -rn "setTimeout" src/`
 
 ---
 

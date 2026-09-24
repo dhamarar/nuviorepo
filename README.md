@@ -50,9 +50,10 @@ There are two ways to create providers:
 
 For simple providers, you can create a single JavaScript file directly in the `providers/` directory.
 
-**Important:** The app's JavaScript engine (Hermes) has limitations with `async/await` in dynamic code.
+**Important:** The app's JavaScript engine is QuickJS, and it has limitations with `async/await` in dynamic code.
 - **Recommended**: Use Promise chains (`.then()`).
 - **Alternative**: Use `async/await` and run the transpiler command (see below).
+- **No timers**: `setTimeout`/`setInterval`/`clearTimeout` do not exist in the sandbox. Call `fetch` directly instead of racing it against a `setTimeout` — the native bridge already applies a timeout.
 
 **Example (Promise Chains):**
 ```javascript
