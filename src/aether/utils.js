@@ -8,16 +8,19 @@ import {
     USER_AGENT
 } from './constants.js';
 
-/** fetch + JSON parse with a hard timeout, never throwing on non-2xx. */
-export async function fetchJson(url, headers, timeoutMs = 15000) {
-    let timer = null;
+/**
+ * fetch + JSON parse, never throwing on non-2xx.
+ *
+ * **No timeout.** The Nuvio sandbox has no timer primitive at all, so the old
+ * `Promise.race([fetch, new Promise((_, r) => setTimeout(...))])` idiom threw
+ * `setTimeout is not defined` synchronously and every call returned
+ * `{ ok: false, status: 0 }` — which is exactly the `HTTP 0` this provider used
+ * to report on-device for every source. The native fetch bridge's own 60 s
+ * connect timeout is the only bound available; there is nothing to configure here.
+ */
+export async function fetchJson(url, headers) {
     try {
-        const response = await Promise.race([
-            fetch(url, { headers }),
-            new Promise((_, reject) => {
-                timer = setTimeout(() => reject(new Error('Request timed out')), timeoutMs);
-            })
-        ]);
+        const response = await fetch(url, { headers });
         const text = await response.text();
         let data = null;
         try {
@@ -28,8 +31,6 @@ export async function fetchJson(url, headers, timeoutMs = 15000) {
         return { ok: response.ok, status: response.status, data, text };
     } catch (error) {
         return { ok: false, status: 0, data: null, text: '', error: error.message };
-    } finally {
-        if (timer) clearTimeout(timer);
     }
 }
 
@@ -133,7 +134,7 @@ export async function resolveToTmdbId(rawId, isTv = false) {
     if (/^tt\d+$/i.test(id)) {
         try {
             const url = `${TMDB_BASE}/find/${encodeURIComponent(id)}?api_key=${TMDB_API_KEY}&external_source=imdb_id`;
-            const result = await fetchJson(url, { 'User-Agent': USER_AGENT }, 4000);
+            const result = await fetchJson(url, { 'User-Agent': USER_AGENT });
             const data = result.data || {};
             const list = isTv ? (data.tv_results || []) : (data.movie_results || []);
             if (list.length > 0 && list[0].id) {
@@ -153,7 +154,7 @@ export async function resolveToTmdbId(rawId, isTv = false) {
 export function getTmdbMeta(tmdbId, mediaType) {
     const type = (mediaType === 'tv' || mediaType === 'series') ? 'tv' : 'movie';
     const url = `${TMDB_BASE}/${type}/${tmdbId}?api_key=${TMDB_API_KEY}`;
-    return fetchJson(url, { 'User-Agent': USER_AGENT }, 4000)
+    return fetchJson(url, { 'User-Agent': USER_AGENT })
         .then(result => {
             const data = result.data || {};
             const releaseDate = data.release_date || data.first_air_date || '';
@@ -169,7 +170,7 @@ export function getTmdbMeta(tmdbId, mediaType) {
 export function getEpisodeMeta(tmdbId, season, episode) {
     if (!tmdbId || !season || !episode) return Promise.resolve(null);
     const url = `${TMDB_BASE}/tv/${tmdbId}/season/${season}/episode/${episode}?api_key=${TMDB_API_KEY}`;
-    return fetchJson(url, { 'User-Agent': USER_AGENT }, 4000)
+    return fetchJson(url, { 'User-Agent': USER_AGENT })
         .then(result => {
             const data = result.data || {};
             return {

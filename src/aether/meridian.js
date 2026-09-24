@@ -38,7 +38,7 @@ function apiHeaders() {
  *     Referer or Sec-Fetch header is added.
  */
 export async function fetchMeridianMovie(tmdbId) {
-    const result = await fetchJson(`${MERIDIAN_HOST}/movie/${tmdbId}`, apiHeaders(), 10000);
+    const result = await fetchJson(`${MERIDIAN_HOST}/movie/${tmdbId}`, apiHeaders());
     const body = result.data;
 
     if (!result.ok || !body || typeof body.url !== 'string' || body.url.indexOf('http') !== 0) {

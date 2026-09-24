@@ -19,8 +19,7 @@ import { briefUrl, fetchJsonWithRetry, loadMaster, log, summarise, variantIsPlay
  * because the path is part of the signed message.
  */
 
-const API_TIMEOUT_MS = 12000;
-const PLAYLIST_TIMEOUT_MS = 10000;
+const API_ATTEMPTS = 2;
 
 function buildPath(tmdbId, mediaType, season, episode) {
     const parts = ['tmdbId=' + encodeURIComponent(tmdbId), 'type=' + encodeURIComponent(mediaType)];
@@ -33,7 +32,7 @@ function buildPath(tmdbId, mediaType, season, episode) {
 
 async function request(path) {
     const headers = await signHeaders('artemis', path);
-    const result = await fetchJsonWithRetry(ARTEMIS.base + path, { headers: headers }, API_TIMEOUT_MS, 2);
+    const result = await fetchJsonWithRetry(ARTEMIS.base + path, { headers: headers }, API_ATTEMPTS);
     return { status: result.status, data: result.data };
 }
 
@@ -70,14 +69,14 @@ export async function fetchArtemis(tmdbId, mediaType, season, episode) {
     }
     log('artemis: playlist ' + briefUrl(data.url));
 
-    const playlist = await loadMaster(data.url, PLAYLIST_TIMEOUT_MS);
+    const playlist = await loadMaster(data.url);
     if (!playlist) {
         log('artemis: dropped — master playlist unusable');
         return null;
     }
 
     const top = playlist.variants[0];
-    if (top && !(await variantIsPlayable(top.url, playlist.headers, PLAYLIST_TIMEOUT_MS))) {
+    if (top && !(await variantIsPlayable(top.url, playlist.headers))) {
         // Expected whenever Artemis lands on its broken `Orbit` upstream.
         log('artemis: dropped — upstream "' + (data.source || '?') +
             '" is dead (top variant ' + top.height + 'p not served)');

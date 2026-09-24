@@ -1,6 +1,6 @@
 /**
  * cinejoy - Built from src/cinejoy/
- * Generated: 2026-09-24T02:47:34.511Z
+ * Generated: 2026-09-24T07:48:45.002Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -82,13 +82,9 @@ function resolveDomain(force = false) {
     const candidates = [cachedDomain, ...CANDIDATE_DOMAINS.filter((d) => d !== cachedDomain)];
     for (const candidate of candidates) {
       try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 4e3);
         const res = yield fetch(candidate, {
-          signal: controller.signal,
           headers: { "User-Agent": HEADERS["User-Agent"] }
         });
-        clearTimeout(timer);
         if (res.ok || res.status >= 200 && res.status < 400) {
           cachedDomain = candidate.replace(/\/+$/, "");
           lastDomainResolvedTime = now;
@@ -106,17 +102,13 @@ function getActiveServers() {
     const apiHosts = [cachedApiHost, ...CANDIDATE_API_HOSTS.filter((h) => h !== cachedApiHost)];
     for (const host of apiHosts) {
       try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 4e3);
         const res = yield fetch(`${host}/servers`, {
-          signal: controller.signal,
           headers: {
             "Origin": cleanDomain,
             "Referer": `${cleanDomain}/`,
             "User-Agent": HEADERS["User-Agent"]
           }
         });
-        clearTimeout(timer);
         if (res.ok) {
           const json = yield res.json();
           const arr = json.servers;

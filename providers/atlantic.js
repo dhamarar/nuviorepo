@@ -1,6 +1,6 @@
 /**
  * atlantic - Built from src/atlantic/
- * Generated: 2026-09-24T07:35:50.961Z
+ * Generated: 2026-09-24T07:46:06.133Z
  */
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -243,30 +243,21 @@ function summarise(data) {
     parts.push('title="' + data.title + '"');
   return parts.length ? parts.join(" ") : "keys=" + keysOf2(data);
 }
-function fetchText(url, options, timeoutMs) {
+function fetchText(url, options) {
   return __async(this, null, function* () {
-    let timer = null;
     try {
-      const response = yield Promise.race([
-        fetch(url, options),
-        new Promise((resolve, reject) => {
-          timer = setTimeout(() => reject(new Error("Request timed out")), timeoutMs);
-        })
-      ]);
+      const response = yield fetch(url, options);
       const text = yield response.text();
       return { ok: response.ok, status: response.status, text };
     } catch (error) {
-      log("network error after " + timeoutMs + "ms: " + briefUrl(url) + " (" + error.message + ")");
+      log("network error: " + briefUrl(url) + " (" + error.message + ")");
       return { ok: false, status: 0, text: "", error: error.message };
-    } finally {
-      if (timer)
-        clearTimeout(timer);
     }
   });
 }
-function fetchJson(url, options, timeoutMs) {
+function fetchJson(url, options) {
   return __async(this, null, function* () {
-    const result = yield fetchText(url, options, timeoutMs);
+    const result = yield fetchText(url, options);
     let data = null;
     if (result.ok && result.text) {
       try {
@@ -278,9 +269,9 @@ function fetchJson(url, options, timeoutMs) {
     return { ok: result.ok, status: result.status, data, text: result.text };
   });
 }
-function fetchJsonWithRetry(url, options, timeoutMs, attempts) {
+function fetchJsonWithRetry(url, options, attempts) {
   return __async(this, null, function* () {
-    const result = yield fetchWithRetry(url, options, timeoutMs, attempts);
+    const result = yield fetchWithRetry(url, options, attempts);
     let data = null;
     if (result.ok && result.text) {
       try {
@@ -373,16 +364,23 @@ function parseMasterPlaylist(text, baseUrl) {
   variants.sort((a, b) => b.height - a.height || b.bandwidth - a.bandwidth);
   return { variants, hasSeparateAudio };
 }
-function fetchWithRetry(url, options, timeoutMs, attempts) {
+var SLOW_ATTEMPT_MS = 5e3;
+function fetchWithRetry(url, options, attempts) {
   return __async(this, null, function* () {
-    let result = yield fetchText(url, options, timeoutMs);
+    const started = Date.now();
+    let result = yield fetchText(url, options);
     if (result.ok)
       return result;
     const transient = result.status === 0 || result.status >= 500;
     if (!transient)
       return result;
+    const elapsed = Date.now() - started;
+    if (elapsed > SLOW_ATTEMPT_MS) {
+      log("not retrying " + briefUrl(url) + " \u2014 first attempt took " + elapsed + "ms, host looks unreachable");
+      return result;
+    }
     for (let i = 1; i < attempts; i++) {
-      result = yield fetchText(url, options, Math.max(3e3, Math.round(timeoutMs / 2)));
+      result = yield fetchText(url, options);
       if (result.ok)
         return result;
       if (result.status !== 0 && result.status < 500)
@@ -394,10 +392,10 @@ function fetchWithRetry(url, options, timeoutMs, attempts) {
 function looksLikePlaylist(text) {
   return typeof text === "string" && text.indexOf("#EXTM3U") !== -1;
 }
-function loadMaster(url, timeoutMs) {
+function loadMaster(url) {
   return __async(this, null, function* () {
     const headers = playbackHeaders();
-    const result = yield fetchWithRetry(url, { headers }, timeoutMs, 2);
+    const result = yield fetchWithRetry(url, { headers }, 2);
     if (!result.ok) {
       log("master playlist HTTP " + result.status + " " + briefUrl(url));
       return null;
@@ -415,9 +413,9 @@ function loadMaster(url, timeoutMs) {
     return { headers, variants: parsed.variants, hasSeparateAudio: parsed.hasSeparateAudio };
   });
 }
-function variantIsPlayable(url, headers, timeoutMs) {
+function variantIsPlayable(url, headers) {
   return __async(this, null, function* () {
-    const result = yield fetchWithRetry(url, { headers }, timeoutMs, 2);
+    const result = yield fetchWithRetry(url, { headers }, 2);
     if (!result.ok) {
       log("variant probe HTTP " + result.status + " " + briefUrl(url));
       return false;
@@ -429,7 +427,7 @@ function getTmdbMeta(tmdbId, mediaType) {
   return __async(this, null, function* () {
     const type = mediaType === "tv" ? "tv" : "movie";
     const url = TMDB_BASE + "/" + type + "/" + encodeURIComponent(tmdbId) + "?api_key=" + TMDB_API_KEY + "&append_to_response=external_ids";
-    const result = yield fetchJson(url, { "User-Agent": USER_AGENT }, 1e4);
+    const result = yield fetchJson(url, { "User-Agent": USER_AGENT });
     const data = result.data || {};
     const external = data.external_ids || {};
     const date = data.release_date || data.first_air_date || "";
@@ -438,6 +436,10 @@ function getTmdbMeta(tmdbId, mediaType) {
       year: date ? String(date).slice(0, 4) : "",
       imdbId: external.imdb_id || data.imdb_id || ""
     };
+    if (!result.ok) {
+      log("tmdb " + type + "/" + tmdbId + " FAILED (HTTP " + result.status + ") \u2014 no title, and subtitles from natsuki/opensubs will be skipped");
+      return meta;
+    }
     log("tmdb " + type + "/" + tmdbId + ' -> "' + meta.title + '" (' + (meta.year || "?") + "), imdb=" + (meta.imdbId || "NONE"));
     return meta;
   });
@@ -528,7 +530,6 @@ var SOURCES = {
 var sessions = {};
 var pending = {};
 var EXPIRY_SKEW_SECONDS = 60;
-var HANDSHAKE_TIMEOUT_MS = 12e3;
 function randomHex(bytes) {
   const out = [];
   const webCrypto = globalThis.crypto;
@@ -579,22 +580,6 @@ function decryptHandshakePayload(keyHex, payloadHex) {
   }
   return hexToUtf8(plainHex);
 }
-function fetchWithTimeout(url, options, timeoutMs) {
-  return __async(this, null, function* () {
-    let timer = null;
-    try {
-      return yield Promise.race([
-        fetch(url, options),
-        new Promise((resolve, reject) => {
-          timer = setTimeout(() => reject(new Error("Handshake timed out")), timeoutMs);
-        })
-      ]);
-    } finally {
-      if (timer)
-        clearTimeout(timer);
-    }
-  });
-}
 function handshake(name) {
   return __async(this, null, function* () {
     const source = SOURCES[name];
@@ -602,9 +587,9 @@ function handshake(name) {
     const nonce = randomHex(8);
     const sig = hmacHex(source.keyHex, source.code + "|" + ts + "|" + nonce);
     log(name + ": handshake POST " + briefUrl(source.base + source.handshakePath));
-    const response = yield fetchWithTimeout(
-      source.base + source.handshakePath,
-      {
+    let response;
+    try {
+      response = yield fetch(source.base + source.handshakePath, {
         method: "POST",
         headers: {
           "Accept": "application/json, text/plain, */*",
@@ -614,9 +599,11 @@ function handshake(name) {
           "User-Agent": USER_AGENT
         },
         body: JSON.stringify({ c: source.code, ts, n: nonce, s: sig })
-      },
-      HANDSHAKE_TIMEOUT_MS
-    );
+      });
+    } catch (error) {
+      log(name + ": handshake network error (" + error.message + ")");
+      throw error;
+    }
     if (!response.ok) {
       log(name + ": handshake HTTP " + response.status + " (gate rejected the signature)");
       throw new Error(name + " handshake failed (HTTP " + response.status + ")");
@@ -691,8 +678,7 @@ function clearSession(name) {
 }
 
 // src/atlantic/aphrodite.js
-var API_TIMEOUT_MS = 12e3;
-var PLAYLIST_TIMEOUT_MS = 1e4;
+var API_ATTEMPTS = 2;
 function buildPath(tmdbId, mediaType, season, episode) {
   if (mediaType === "tv") {
     return "/content/tv/" + encodeURIComponent(tmdbId) + "/" + encodeURIComponent(season || 1) + "/" + encodeURIComponent(episode || 1);
@@ -702,7 +688,7 @@ function buildPath(tmdbId, mediaType, season, episode) {
 function request(path) {
   return __async(this, null, function* () {
     const headers = yield signHeaders("aphrodite", path);
-    const result = yield fetchJsonWithRetry(APHRODITE.base + path, { headers }, API_TIMEOUT_MS, 2);
+    const result = yield fetchJsonWithRetry(APHRODITE.base + path, { headers }, API_ATTEMPTS);
     return { status: result.status, data: result.data };
   });
 }
@@ -740,13 +726,13 @@ function fetchAphrodite(tmdbId, mediaType, season, episode) {
       return null;
     }
     log("aphrodite: playlist " + briefUrl(url));
-    const playlist = yield loadMaster(url, PLAYLIST_TIMEOUT_MS);
+    const playlist = yield loadMaster(url);
     if (!playlist) {
       log("aphrodite: dropped \u2014 master playlist unusable");
       return null;
     }
     const top = playlist.variants[0];
-    if (top && !(yield variantIsPlayable(top.url, playlist.headers, PLAYLIST_TIMEOUT_MS))) {
+    if (top && !(yield variantIsPlayable(top.url, playlist.headers))) {
       log("aphrodite: dropped \u2014 top variant (" + top.height + "p) is not being served");
       return null;
     }
@@ -763,8 +749,7 @@ function fetchAphrodite(tmdbId, mediaType, season, episode) {
 }
 
 // src/atlantic/artemis.js
-var API_TIMEOUT_MS2 = 12e3;
-var PLAYLIST_TIMEOUT_MS2 = 1e4;
+var API_ATTEMPTS2 = 2;
 function buildPath2(tmdbId, mediaType, season, episode) {
   const parts = ["tmdbId=" + encodeURIComponent(tmdbId), "type=" + encodeURIComponent(mediaType)];
   if (mediaType === "tv") {
@@ -776,7 +761,7 @@ function buildPath2(tmdbId, mediaType, season, episode) {
 function request2(path) {
   return __async(this, null, function* () {
     const headers = yield signHeaders("artemis", path);
-    const result = yield fetchJsonWithRetry(ARTEMIS.base + path, { headers }, API_TIMEOUT_MS2, 2);
+    const result = yield fetchJsonWithRetry(ARTEMIS.base + path, { headers }, API_ATTEMPTS2);
     return { status: result.status, data: result.data };
   });
 }
@@ -809,13 +794,13 @@ function fetchArtemis(tmdbId, mediaType, season, episode) {
       return null;
     }
     log("artemis: playlist " + briefUrl(data.url));
-    const playlist = yield loadMaster(data.url, PLAYLIST_TIMEOUT_MS2);
+    const playlist = yield loadMaster(data.url);
     if (!playlist) {
       log("artemis: dropped \u2014 master playlist unusable");
       return null;
     }
     const top = playlist.variants[0];
-    if (top && !(yield variantIsPlayable(top.url, playlist.headers, PLAYLIST_TIMEOUT_MS2))) {
+    if (top && !(yield variantIsPlayable(top.url, playlist.headers))) {
       log('artemis: dropped \u2014 upstream "' + (data.source || "?") + '" is dead (top variant ' + top.height + "p not served)");
       return null;
     }
@@ -832,11 +817,10 @@ function fetchArtemis(tmdbId, mediaType, season, episode) {
 }
 
 // src/atlantic/subtitles.js
-var SUBTITLE_TIMEOUT_MS = 12e3;
 function fetchGranite(tmdbId, mediaType, season, episode) {
   return __async(this, null, function* () {
     const url = mediaType === "tv" ? GRANITE_BASE + "/tv/" + encodeURIComponent(tmdbId) + "/" + encodeURIComponent(season || 1) + "/" + encodeURIComponent(episode || 1) : GRANITE_BASE + "/movie/" + encodeURIComponent(tmdbId);
-    const result = yield fetchJson(url, { "User-Agent": USER_AGENT }, SUBTITLE_TIMEOUT_MS);
+    const result = yield fetchJson(url, { "User-Agent": USER_AGENT });
     if (!result.ok || !Array.isArray(result.data)) {
       log("granite: unavailable (HTTP " + result.status + ")");
       return [];
@@ -877,8 +861,7 @@ function fetchNatsuki(imdbId, season, episode) {
     const headers = natsukiHeaders();
     const result = yield fetchJson(
       NATSUKI_BASE + "?" + parts.join("&"),
-      { headers },
-      SUBTITLE_TIMEOUT_MS
+      { headers }
     );
     if (!result.ok || !result.data || !Array.isArray(result.data.subtitles)) {
       log("natsuki: unavailable (HTTP " + result.status + ")");
@@ -917,7 +900,7 @@ function fetchOpenSubtitles(imdbId, season, episode) {
       "User-Agent": USER_AGENT,
       "X-User-Agent": OPENSUBS_USER_AGENT
     };
-    const result = yield fetchJson(OPENSUBS_BASE + path, { headers }, SUBTITLE_TIMEOUT_MS);
+    const result = yield fetchJson(OPENSUBS_BASE + path, { headers });
     if (!result.ok || !Array.isArray(result.data)) {
       log("opensubs: unavailable (HTTP " + result.status + ")");
       return [];
@@ -1063,6 +1046,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
       const episodeNumber = type === "tv" ? Number(episode) || 1 : null;
       log("--- getStreams tmdb=" + tmdbId + " type=" + type + (type === "tv" ? " S" + seasonNumber + "E" + episodeNumber : "") + " ---");
       log("settings: aphrodite=" + settings.enableAphrodite + " artemis=" + settings.enableArtemis + " granite=" + settings.enableGranite + " natsuki=" + settings.enableNatsuki + " opensubs=" + settings.enableOpenSubtitles + " maxPerLanguage=" + settings.maxSubtitlesPerLanguage);
+      log("sandbox: setTimeout=" + typeof setTimeout + " setInterval=" + typeof setInterval + " AbortController=" + typeof AbortController + " Date=" + typeof Date + " fetch=" + typeof fetch);
       const meta = yield getTmdbMeta(tmdbId, type);
       const subtitleJob = fetchSubtitles(
         {

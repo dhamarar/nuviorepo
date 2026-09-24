@@ -30,7 +30,7 @@ export async function fetchExtraSources(tmdbId, mediaType, season, episode) {
             : `${source.host}/movie/${tmdbId}`;
 
         try {
-            const result = await fetchJson(url, headers, 6000);
+            const result = await fetchJson(url, headers);
             const body = result.data;
 
             if (!result.ok || !body || typeof body.stream !== 'string' || body.stream.indexOf('http') !== 0) {

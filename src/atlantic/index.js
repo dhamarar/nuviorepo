@@ -133,6 +133,11 @@ export async function getStreams(tmdbId, mediaType, season, episode) {
             ' granite=' + settings.enableGranite + ' natsuki=' + settings.enableNatsuki +
             ' opensubs=' + settings.enableOpenSubtitles +
             ' maxPerLanguage=' + settings.maxSubtitlesPerLanguage);
+        // Proves the sandbox capabilities in-place. `setTimeout` is expected to be
+        // undefined here — the provider must never depend on a timer.
+        log('sandbox: setTimeout=' + typeof setTimeout + ' setInterval=' + typeof setInterval +
+            ' AbortController=' + typeof AbortController + ' Date=' + typeof Date +
+            ' fetch=' + typeof fetch);
 
         const meta = await getTmdbMeta(tmdbId, type);
 

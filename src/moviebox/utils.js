@@ -140,7 +140,9 @@ export async function movieBoxRequest(method, url, body = null, customHeaders = 
             if (!res.ok) {
                 if (res.status === 403 || res.status === 429) {
                     retries--;
-                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    // No backoff delay: the Nuvio sandbox has no timers, so
+                    // `await new Promise(r => setTimeout(r, 1000))` threw here and
+                    // the retry loop died instead of retrying.
                     continue;
                 }
                 return null;
@@ -164,7 +166,7 @@ export async function movieBoxRequest(method, url, body = null, customHeaders = 
                 console.error("[MovieBox Request Error]", err.message);
                 return null;
             }
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            // No backoff delay — see the note above; timers do not exist here.
         }
     }
     return null;

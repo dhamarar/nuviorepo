@@ -15,8 +15,7 @@ import { briefUrl, fetchJsonWithRetry, loadMaster, log, summarise, variantIsPlay
  * path is built once and reused for both the signature and the fetch.
  */
 
-const API_TIMEOUT_MS = 12000;
-const PLAYLIST_TIMEOUT_MS = 10000;
+const API_ATTEMPTS = 2;
 
 function buildPath(tmdbId, mediaType, season, episode) {
     if (mediaType === 'tv') {
@@ -28,7 +27,7 @@ function buildPath(tmdbId, mediaType, season, episode) {
 
 async function request(path) {
     const headers = await signHeaders('aphrodite', path);
-    const result = await fetchJsonWithRetry(APHRODITE.base + path, { headers: headers }, API_TIMEOUT_MS, 2);
+    const result = await fetchJsonWithRetry(APHRODITE.base + path, { headers: headers }, API_ATTEMPTS);
     return { status: result.status, data: result.data };
 }
 
@@ -73,7 +72,7 @@ export async function fetchAphrodite(tmdbId, mediaType, season, episode) {
     }
     log('aphrodite: playlist ' + briefUrl(url));
 
-    const playlist = await loadMaster(url, PLAYLIST_TIMEOUT_MS);
+    const playlist = await loadMaster(url);
     if (!playlist) {
         log('aphrodite: dropped — master playlist unusable');
         return null;
@@ -81,7 +80,7 @@ export async function fetchAphrodite(tmdbId, mediaType, season, episode) {
 
     // Confirm the top rendition is really served before advertising the source.
     const top = playlist.variants[0];
-    if (top && !(await variantIsPlayable(top.url, playlist.headers, PLAYLIST_TIMEOUT_MS))) {
+    if (top && !(await variantIsPlayable(top.url, playlist.headers))) {
         log('aphrodite: dropped — top variant (' + top.height + 'p) is not being served');
         return null;
     }

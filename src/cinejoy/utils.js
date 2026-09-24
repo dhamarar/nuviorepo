@@ -24,13 +24,13 @@ export async function resolveDomain(force = false) {
     const candidates = [cachedDomain, ...CANDIDATE_DOMAINS.filter(d => d !== cachedDomain)];
     for (const candidate of candidates) {
         try {
-            const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), 4000);
+            // No AbortController/timeout here: the Nuvio sandbox has no timers, so
+            // `setTimeout(() => controller.abort(), …)` threw and this whole block
+            // fell through to the catch — every domain probe silently failed and the
+            // provider always used its default domain.
             const res = await fetch(candidate, {
-                signal: controller.signal,
                 headers: { "User-Agent": HEADERS["User-Agent"] }
             });
-            clearTimeout(timer);
             if (res.ok || (res.status >= 200 && res.status < 400)) {
                 cachedDomain = candidate.replace(/\/+$/, '');
                 lastDomainResolvedTime = now;
@@ -48,17 +48,14 @@ export async function getActiveServers(domain = DEFAULT_DOMAIN) {
 
     for (const host of apiHosts) {
         try {
-            const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), 4000);
+            // See the note in resolveDomain — no timers exist in the sandbox.
             const res = await fetch(`${host}/servers`, {
-                signal: controller.signal,
                 headers: {
                     "Origin": cleanDomain,
                     "Referer": `${cleanDomain}/`,
                     "User-Agent": HEADERS["User-Agent"]
                 }
             });
-            clearTimeout(timer);
 
             if (res.ok) {
                 const json = await res.json();

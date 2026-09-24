@@ -1,6 +1,6 @@
 /**
  * aether - Built from src/aether/
- * Generated: 2026-09-21T08:20:41.942Z
+ * Generated: 2026-09-24T07:48:44.607Z
  */
 var __async = (__this, __arguments, generator) => {
   return new Promise((resolve, reject) => {
@@ -142,16 +142,10 @@ var LANGUAGE_NAMES = {
 };
 
 // src/aether/utils.js
-function fetchJson(url, headers, timeoutMs = 15e3) {
+function fetchJson(url, headers) {
   return __async(this, null, function* () {
-    let timer = null;
     try {
-      const response = yield Promise.race([
-        fetch(url, { headers }),
-        new Promise((_, reject) => {
-          timer = setTimeout(() => reject(new Error("Request timed out")), timeoutMs);
-        })
-      ]);
+      const response = yield fetch(url, { headers });
       const text = yield response.text();
       let data = null;
       try {
@@ -162,9 +156,6 @@ function fetchJson(url, headers, timeoutMs = 15e3) {
       return { ok: response.ok, status: response.status, data, text };
     } catch (error) {
       return { ok: false, status: 0, data: null, text: "", error: error.message };
-    } finally {
-      if (timer)
-        clearTimeout(timer);
     }
   });
 }
@@ -242,7 +233,7 @@ function resolveToTmdbId(rawId, isTv = false) {
     if (/^tt\d+$/i.test(id)) {
       try {
         const url = `${TMDB_BASE}/find/${encodeURIComponent(id)}?api_key=${TMDB_API_KEY}&external_source=imdb_id`;
-        const result = yield fetchJson(url, { "User-Agent": USER_AGENT }, 4e3);
+        const result = yield fetchJson(url, { "User-Agent": USER_AGENT });
         const data = result.data || {};
         const list = isTv ? data.tv_results || [] : data.movie_results || [];
         if (list.length > 0 && list[0].id) {
@@ -262,7 +253,7 @@ function resolveToTmdbId(rawId, isTv = false) {
 function getTmdbMeta(tmdbId, mediaType) {
   const type = mediaType === "tv" || mediaType === "series" ? "tv" : "movie";
   const url = `${TMDB_BASE}/${type}/${tmdbId}?api_key=${TMDB_API_KEY}`;
-  return fetchJson(url, { "User-Agent": USER_AGENT }, 4e3).then((result) => {
+  return fetchJson(url, { "User-Agent": USER_AGENT }).then((result) => {
     const data = result.data || {};
     const releaseDate = data.release_date || data.first_air_date || "";
     return {
@@ -276,7 +267,7 @@ function getEpisodeMeta(tmdbId, season, episode) {
   if (!tmdbId || !season || !episode)
     return Promise.resolve(null);
   const url = `${TMDB_BASE}/tv/${tmdbId}/season/${season}/episode/${episode}?api_key=${TMDB_API_KEY}`;
-  return fetchJson(url, { "User-Agent": USER_AGENT }, 4e3).then((result) => {
+  return fetchJson(url, { "User-Agent": USER_AGENT }).then((result) => {
     const data = result.data || {};
     return {
       name: data.name || null,
@@ -451,7 +442,7 @@ function fetchExtraSources(tmdbId, mediaType, season, episode) {
     const promises = EXTRA_SOURCES.map((source) => __async(this, null, function* () {
       const url = mediaType === "tv" ? `${source.host}/tv/${tmdbId}/${season}/${episode}` : `${source.host}/movie/${tmdbId}`;
       try {
-        const result = yield fetchJson(url, headers, 6e3);
+        const result = yield fetchJson(url, headers);
         const body = result.data;
         if (!result.ok || !body || typeof body.stream !== "string" || body.stream.indexOf("http") !== 0) {
           return null;
@@ -487,7 +478,7 @@ function apiHeaders() {
 }
 function fetchMeridianMovie(tmdbId) {
   return __async(this, null, function* () {
-    const result = yield fetchJson(`${MERIDIAN_HOST}/movie/${tmdbId}`, apiHeaders(), 1e4);
+    const result = yield fetchJson(`${MERIDIAN_HOST}/movie/${tmdbId}`, apiHeaders());
     const body = result.data;
     if (!result.ok || !body || typeof body.url !== "string" || body.url.indexOf("http") !== 0) {
       return null;

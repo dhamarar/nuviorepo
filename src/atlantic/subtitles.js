@@ -33,8 +33,6 @@ import {
  *    with each subtitle so the player can fetch them too.
  */
 
-const SUBTITLE_TIMEOUT_MS = 12000;
-
 /** Granite — keyed by TMDB id, serves VTT, needs no special headers. */
 async function fetchGranite(tmdbId, mediaType, season, episode) {
     const url = mediaType === 'tv'
@@ -42,7 +40,7 @@ async function fetchGranite(tmdbId, mediaType, season, episode) {
             encodeURIComponent(season || 1) + '/' + encodeURIComponent(episode || 1)
         : GRANITE_BASE + '/movie/' + encodeURIComponent(tmdbId);
 
-    const result = await fetchJson(url, { 'User-Agent': USER_AGENT }, SUBTITLE_TIMEOUT_MS);
+    const result = await fetchJson(url, { 'User-Agent': USER_AGENT });
     if (!result.ok || !Array.isArray(result.data)) {
         log('granite: unavailable (HTTP ' + result.status + ')');
         return [];
@@ -87,8 +85,7 @@ async function fetchNatsuki(imdbId, season, episode) {
     const headers = natsukiHeaders();
     const result = await fetchJson(
         NATSUKI_BASE + '?' + parts.join('&'),
-        { headers: headers },
-        SUBTITLE_TIMEOUT_MS
+        { headers: headers }
     );
     if (!result.ok || !result.data || !Array.isArray(result.data.subtitles)) {
         log('natsuki: unavailable (HTTP ' + result.status + ')');
@@ -134,7 +131,7 @@ async function fetchOpenSubtitles(imdbId, season, episode) {
         'X-User-Agent': OPENSUBS_USER_AGENT
     };
 
-    const result = await fetchJson(OPENSUBS_BASE + path, { headers: headers }, SUBTITLE_TIMEOUT_MS);
+    const result = await fetchJson(OPENSUBS_BASE + path, { headers: headers });
     if (!result.ok || !Array.isArray(result.data)) {
         log('opensubs: unavailable (HTTP ' + result.status + ')');
         return [];

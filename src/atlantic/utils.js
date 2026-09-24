@@ -49,32 +49,43 @@ export function summarise(data) {
     return parts.length ? parts.join(' ') : 'keys=' + keysOf(data);
 }
 
-/** fetch + text with a hard timeout. Never throws; always resolves to a result. */
-export async function fetchText(url, options, timeoutMs) {
-    let timer = null;
+/**
+ * fetch + text. Never throws; always resolves to a result.
+ *
+ * **There is NO client-side timeout, and there cannot be one.**
+ *
+ * The QuickJS sandbox exposes no timer primitive at all: `setTimeout`,
+ * `setInterval` and `clearTimeout` are undefined, and the host's `fetch` polyfill
+ * (`__native_fetch(url, method, headersJson, body, followRedirects)`) never reads
+ * `options.signal`, so `AbortController` cannot cancel anything either.
+ *
+ * The obvious idiom is therefore a trap:
+ *
+ *     Promise.race([fetch(url), new Promise((_, r) => setTimeout(() => r(...), ms))])
+ *
+ * `new Promise(executor)` runs the executor synchronously, so this throws
+ * `setTimeout is not defined` *before the race is even created* — the request is
+ * started and then immediately abandoned, and every single call fails with
+ * status 0 in under a millisecond. That is exactly what made this provider return
+ * no streams in the app while passing every local test.
+ *
+ * The only timeout is the native bridge's own (a 60 s TCP connect timeout, which
+ * surfaces in logcat as `Fetch bridge error for <METHOD> <url>`).
+ */
+export async function fetchText(url, options) {
     try {
-        const response = await Promise.race([
-            fetch(url, options),
-            new Promise((resolve, reject) => {
-                timer = setTimeout(() => reject(new Error('Request timed out')), timeoutMs);
-            })
-        ]);
+        const response = await fetch(url, options);
         const text = await response.text();
         return { ok: response.ok, status: response.status, text };
     } catch (error) {
-        // A status-0 failure is the one that silently kills a source, so it is
-        // the single most useful thing to surface. The native fetch keeps
-        // running after this timeout, so the host may log its own
-        // "Fetch bridge error" line much later — that is expected.
-        log('network error after ' + timeoutMs + 'ms: ' + briefUrl(url) + ' (' + error.message + ')');
+        // Status 0 is the one failure that silently kills a source.
+        log('network error: ' + briefUrl(url) + ' (' + error.message + ')');
         return { ok: false, status: 0, text: '', error: error.message };
-    } finally {
-        if (timer) clearTimeout(timer);
     }
 }
 
-export async function fetchJson(url, options, timeoutMs) {
-    const result = await fetchText(url, options, timeoutMs);
+export async function fetchJson(url, options) {
+    const result = await fetchText(url, options);
     let data = null;
     if (result.ok && result.text) {
         try {
@@ -87,8 +98,8 @@ export async function fetchJson(url, options, timeoutMs) {
 }
 
 /** `fetchJson` with the transient-failure retry. */
-export async function fetchJsonWithRetry(url, options, timeoutMs, attempts) {
-    const result = await fetchWithRetry(url, options, timeoutMs, attempts);
+export async function fetchJsonWithRetry(url, options, attempts) {
+    const result = await fetchWithRetry(url, options, attempts);
     let data = null;
     if (result.ok && result.text) {
         try {
@@ -208,24 +219,41 @@ export function parseMasterPlaylist(text, baseUrl) {
     return { variants: variants, hasSeparateAudio: hasSeparateAudio };
 }
 
+/** A first attempt slower than this means the host is unreachable, not blipping. */
+const SLOW_ATTEMPT_MS = 5000;
+
 /**
- * Fetch, and on a *transient* failure try once more with a shorter timeout.
+ * Retry a *transient* failure.
  *
  * The delivery CDNs are intermittent — the same title can answer cleanly on one
  * call and fail on the next — so a single blip would otherwise drop a source that
  * is perfectly usable. Only network errors (status 0) and 5xx are retried; a 4xx
  * is a real answer (a missing title, an expired session) and retrying it would
  * just double the cost.
+ *
+ * With no client-side timeout available, a retry costs a full round trip against
+ * the bridge's 60 s connect timeout, so one is skipped when the first attempt
+ * already took a long time: that pattern means the host is unreachable and a
+ * second try would only double the wait. `Date.now()` is core JS and available;
+ * timers are not.
  */
-async function fetchWithRetry(url, options, timeoutMs, attempts) {
-    let result = await fetchText(url, options, timeoutMs);
+async function fetchWithRetry(url, options, attempts) {
+    const started = Date.now();
+    let result = await fetchText(url, options);
     if (result.ok) return result;
 
     const transient = result.status === 0 || result.status >= 500;
     if (!transient) return result;
 
+    const elapsed = Date.now() - started;
+    if (elapsed > SLOW_ATTEMPT_MS) {
+        log('not retrying ' + briefUrl(url) + ' — first attempt took ' + elapsed +
+            'ms, host looks unreachable');
+        return result;
+    }
+
     for (let i = 1; i < attempts; i++) {
-        result = await fetchText(url, options, Math.max(3000, Math.round(timeoutMs / 2)));
+        result = await fetchText(url, options);
         if (result.ok) return result;
         if (result.status !== 0 && result.status < 500) return result;
     }
@@ -238,9 +266,9 @@ export function looksLikePlaylist(text) {
 }
 
 /** Fetch a master playlist and parse it. Returns null when the source is unusable. */
-export async function loadMaster(url, timeoutMs) {
+export async function loadMaster(url) {
     const headers = playbackHeaders();
-    const result = await fetchWithRetry(url, { headers: headers }, timeoutMs, 2);
+    const result = await fetchWithRetry(url, { headers: headers }, 2);
     if (!result.ok) {
         log('master playlist HTTP ' + result.status + ' ' + briefUrl(url));
         return null;
@@ -270,8 +298,8 @@ export async function loadMaster(url, timeoutMs) {
  * is a clean 200. Probing the top variant is what separates a live source from a
  * listed-but-dead one.
  */
-export async function variantIsPlayable(url, headers, timeoutMs) {
-    const result = await fetchWithRetry(url, { headers: headers }, timeoutMs, 2);
+export async function variantIsPlayable(url, headers) {
+    const result = await fetchWithRetry(url, { headers: headers }, 2);
     if (!result.ok) {
         log('variant probe HTTP ' + result.status + ' ' + briefUrl(url));
         return false;
@@ -285,7 +313,7 @@ export async function getTmdbMeta(tmdbId, mediaType) {
     // `external_ids` is required: /tv/:id does not carry imdb_id on its own.
     const url = TMDB_BASE + '/' + type + '/' + encodeURIComponent(tmdbId) +
         '?api_key=' + TMDB_API_KEY + '&append_to_response=external_ids';
-    const result = await fetchJson(url, { 'User-Agent': USER_AGENT }, 10000);
+    const result = await fetchJson(url, { 'User-Agent': USER_AGENT });
     const data = result.data || {};
     const external = data.external_ids || {};
     const date = data.release_date || data.first_air_date || '';
@@ -294,6 +322,14 @@ export async function getTmdbMeta(tmdbId, mediaType) {
         year: date ? String(date).slice(0, 4) : '',
         imdbId: external.imdb_id || data.imdb_id || ''
     };
+    if (!result.ok) {
+        // Cosmetic only — the title is used for the stream label, and the IMDb id
+        // is what the Natsuki/OpenSubtitles backends need. Say so plainly rather
+        // than logging an empty title as if TMDB had answered.
+        log('tmdb ' + type + '/' + tmdbId + ' FAILED (HTTP ' + result.status +
+            ') — no title, and subtitles from natsuki/opensubs will be skipped');
+        return meta;
+    }
     log('tmdb ' + type + '/' + tmdbId + ' -> "' + meta.title + '" (' + (meta.year || '?') +
         '), imdb=' + (meta.imdbId || 'NONE'));
     return meta;

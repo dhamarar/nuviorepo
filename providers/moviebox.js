@@ -1,6 +1,6 @@
 /**
  * moviebox - Built from src/moviebox/
- * Generated: 2026-09-21T01:54:45.760Z
+ * Generated: 2026-09-24T07:48:45.475Z
  */
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -208,7 +208,6 @@ function movieBoxRequest(_0, _1) {
         if (!res.ok) {
           if (res.status === 403 || res.status === 429) {
             retries--;
-            yield new Promise((resolve) => setTimeout(resolve, 1e3));
             continue;
           }
           return null;
@@ -230,7 +229,6 @@ function movieBoxRequest(_0, _1) {
           console.error("[MovieBox Request Error]", err.message);
           return null;
         }
-        yield new Promise((resolve) => setTimeout(resolve, 1e3));
       }
     }
     return null;

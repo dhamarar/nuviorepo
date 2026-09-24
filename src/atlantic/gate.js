@@ -22,7 +22,6 @@ const pending = {};
 
 /** Refresh a little early so a session cannot expire mid-flight. */
 const EXPIRY_SKEW_SECONDS = 60;
-const HANDSHAKE_TIMEOUT_MS = 12000;
 
 /**
  * 8 random bytes as hex — the same shape the site generates (a 16-char nonce).
@@ -101,19 +100,14 @@ function decryptHandshakePayload(keyHex, payloadHex) {
     return hexToUtf8(plainHex);
 }
 
-async function fetchWithTimeout(url, options, timeoutMs) {
-    let timer = null;
-    try {
-        return await Promise.race([
-            fetch(url, options),
-            new Promise((resolve, reject) => {
-                timer = setTimeout(() => reject(new Error('Handshake timed out')), timeoutMs);
-            })
-        ]);
-    } finally {
-        if (timer) clearTimeout(timer);
-    }
-}
+/**
+ * No timeout wrapper here on purpose.
+ *
+ * The sandbox has no timer primitive, so the usual `Promise.race([fetch, timeout])`
+ * idiom throws `setTimeout is not defined` synchronously and the handshake would
+ * never even be sent. The native fetch bridge's own 60 s connect timeout is the
+ * only bound available. See `fetchText` in `utils.js` for the full explanation.
+ */
 
 /** Run the handshake and return `{ sid, skey, exp }`. */
 async function handshake(name) {
@@ -124,9 +118,9 @@ async function handshake(name) {
 
     log(name + ': handshake POST ' + briefUrl(source.base + source.handshakePath));
 
-    const response = await fetchWithTimeout(
-        source.base + source.handshakePath,
-        {
+    let response;
+    try {
+        response = await fetch(source.base + source.handshakePath, {
             method: 'POST',
             headers: {
                 'Accept': 'application/json, text/plain, */*',
@@ -136,9 +130,11 @@ async function handshake(name) {
                 'User-Agent': USER_AGENT
             },
             body: JSON.stringify({ c: source.code, ts: ts, n: nonce, s: sig })
-        },
-        HANDSHAKE_TIMEOUT_MS
-    );
+        });
+    } catch (error) {
+        log(name + ': handshake network error (' + error.message + ')');
+        throw error;
+    }
 
     if (!response.ok) {
         log(name + ': handshake HTTP ' + response.status + ' (gate rejected the signature)');
