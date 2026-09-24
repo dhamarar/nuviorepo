@@ -7,8 +7,8 @@ import { briefUrl, log } from './utils.js';
  *
  * The site signs every call to its stream backends with a session issued by a
  * handshake endpoint. This module reproduces that handshake and the per-request
- * signature using crypto-js, because the runtime (Hermes) has no `crypto.subtle`
- * and the gate's own implementation is WebCrypto-only.
+ * signature using crypto-js, which the host injects as a global and which is
+ * already the repo's convention for crypto work.
  */
 
 const SOURCES = {
@@ -26,8 +26,9 @@ const HANDSHAKE_TIMEOUT_MS = 12000;
 
 /**
  * 8 random bytes as hex — the same shape the site generates (a 16-char nonce).
- * `crypto.getRandomValues` is absent on Hermes, so fall back to Math.random.
- * The nonce only needs to be unique per request, not unguessable.
+ * The sandbox does provide `crypto.getRandomValues`, but fall back to
+ * Math.random if it is ever absent. The nonce only needs to be unique per
+ * request, not unguessable.
  */
 function randomHex(bytes) {
     const out = [];
