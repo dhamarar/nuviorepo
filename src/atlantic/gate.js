@@ -1,6 +1,6 @@
 import CryptoJS from 'crypto-js';
 import { APHRODITE, ARTEMIS, SITE_ORIGIN, USER_AGENT } from './constants.js';
-import { briefUrl, log } from './utils.js';
+import { blockPageReason, briefUrl, log } from './utils.js';
 
 /**
  * Atlantic's request gate.
@@ -78,6 +78,7 @@ function decryptHandshakePayload(keyHex, payloadHex) {
     const raw = String(payloadHex || '');
     // iv (24 hex) + at least one block of ciphertext + tag (32 hex)
     if (raw.length < 24 + 32 + 32) return '';
+    if (!/^[0-9a-f]+$/i.test(raw)) return '';
 
     const ivHex = raw.slice(0, 24);
     const bodyHex = raw.slice(24);
@@ -136,12 +137,32 @@ async function handshake(name) {
         throw error;
     }
 
+    if (response.status === 0) {
+        // The bridge never got a response at all. This is a network-level failure
+        // (TLS interception, DNS hijack, no route) and no amount of provider-side
+        // work will fix it — say so instead of blaming the signature.
+        log(name + ': handshake got NO response (status 0) — the request never completed. ' +
+            'Look for the "Fetch bridge error" line above; a TLS/DNS failure means this ' +
+            'network is blocking ' + source.base);
+        throw new Error(name + ' handshake got no response (status 0)');
+    }
+
     if (!response.ok) {
         log(name + ': handshake HTTP ' + response.status + ' (gate rejected the signature)');
         throw new Error(name + ' handshake failed (HTTP ' + response.status + ')');
     }
 
     const text = await response.text();
+
+    // A carrier/ISP block page arrives as 200 + HTML. Check for it before the
+    // JSON parse so the log blames the network, not the gate.
+    const blocked = blockPageReason(text);
+    if (blocked) {
+        log(name + ': handshake answered with a ' + blocked + ' — this network is blocking ' +
+            source.base + ', the provider cannot fix that');
+        throw new Error(name + ' handshake blocked by the network (' + blocked + ')');
+    }
+
     let payload = null;
     try {
         payload = JSON.parse(text);
@@ -153,16 +174,28 @@ async function handshake(name) {
         throw new Error(name + ' handshake returned no payload');
     }
 
+    const raw = String(payload.d);
+    if (raw.length < 88 || !/^[0-9a-f]+$/i.test(raw)) {
+        // The envelope was JSON but `d` is not gate ciphertext: wrong key/endpoint,
+        // or a middlebox rewrote the body on the way through.
+        log(name + ': handshake payload is not gate ciphertext (' + raw.length +
+            ' chars, ' + (/^[0-9a-f]+$/i.test(raw) ? 'valid hex' : 'NOT hex') +
+            ') — wrong key/endpoint, or the body was rewritten in transit');
+        throw new Error(name + ' handshake payload is not ciphertext');
+    }
+
     let session = null;
     try {
-        session = JSON.parse(decryptHandshakePayload(source.keyHex, payload.d));
+        session = JSON.parse(decryptHandshakePayload(source.keyHex, raw));
     } catch (error) {
         session = null;
     }
     if (!session || !session.sid || !session.skey) {
-        // Almost always means crypto-js is missing or the AES-CTR emulation
-        // misbehaved, rather than a server-side problem.
-        log(name + ': handshake payload could NOT be decrypted (crypto-js unavailable?)');
+        // Genuine crypto failure: the ciphertext was well-formed but did not
+        // decrypt to a session. Almost always a stale `keyHex`/`code` in
+        // `constants.js`, or crypto-js missing from the sandbox.
+        log(name + ': handshake decrypted to something that is not a session ' +
+            '(crypto-js missing, or keyHex/code in constants.js is stale)');
         throw new Error(name + ' handshake payload could not be decrypted');
     }
 

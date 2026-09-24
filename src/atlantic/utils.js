@@ -34,6 +34,65 @@ export function keysOf(data) {
     return Object.keys(data).join(',') || 'none';
 }
 
+/**
+ * Turn a bridge error message into something actionable.
+ *
+ * The native fetch bridge surfaces the raw Java exception text, which reads as
+ * noise on a phone. The interesting cases are TLS interception and DNS hijack,
+ * because those are *network* problems the provider can never fix from inside
+ * the sandbox — and without this hint they look identical to a dead server.
+ */
+export function networkFailureHint(message) {
+    const text = String(message || '');
+    if (text.indexOf('SSLPeerUnverifiedException') !== -1) {
+        return ' TLS hostname verification FAILED — something is intercepting this host ' +
+            '(read the `DN:` line in the Fetch bridge error above; if it is not the host\'s ' +
+            'real certificate, a carrier/ISP proxy answered instead)';
+    }
+    if (text.indexOf('Trust anchor') !== -1 || text.indexOf('CertPathValidatorException') !== -1) {
+        return ' TLS certificate is not trusted — an intercepting proxy is presenting its own cert';
+    }
+    if (text.indexOf('UnknownHost') !== -1) {
+        return ' DNS lookup failed — the host did not resolve (blocked or hijacked DNS?)';
+    }
+    if (text.indexOf('ETIMEDOUT') !== -1 || text.indexOf('timeout') !== -1) {
+        return ' the connection timed out';
+    }
+    if (text.indexOf('ECONNREFUSED') !== -1) {
+        return ' the host refused the connection';
+    }
+    return '';
+}
+
+/**
+ * Recognise an ISP/carrier block page.
+ *
+ * Indonesian carriers (Indosat `ioh.co.id`, Telkomsel, ...) run "Internet Positif"
+ * filtering: a blocked host is answered by the carrier's own landing page. TLS
+ * then fails hostname verification (`DN: CN=*.ioh.co.id`) and, when the bridge
+ * still hands back a body, it is HTML — so every "unexpected body" path looks
+ * like a server bug unless the body is checked for this first.
+ */
+export function blockPageReason(text) {
+    const body = String(text || '');
+    if (!body) return '';
+    const lower = body.toLowerCase();
+    if (lower.indexOf('internetpositif') !== -1) {
+        return 'carrier block page (internetpositif.ioh.co.id)';
+    }
+    if (lower.indexOf('trustpositif') !== -1 || lower.indexOf('internet sehat') !== -1 ||
+        lower.indexOf('akses diblokir') !== -1 || lower.indexOf('situs diblokir') !== -1) {
+        return 'carrier "Internet Positif" block page';
+    }
+    if (lower.indexOf('ioh.co.id') !== -1) {
+        return 'Indosat (ioh.co.id) carrier landing page';
+    }
+    if (lower.indexOf('<html') !== -1 && body.indexOf('{') === -1) {
+        return 'HTML page where JSON was expected (headers stripped, or a proxy answered)';
+    }
+    return '';
+}
+
 /** One-line summary of a source API response, for logcat. */
 export function summarise(data) {
     if (!data || typeof data !== 'object') return String(data);
@@ -78,8 +137,10 @@ export async function fetchText(url, options) {
         const text = await response.text();
         return { ok: response.ok, status: response.status, text };
     } catch (error) {
-        // Status 0 is the one failure that silently kills a source.
-        log('network error: ' + briefUrl(url) + ' (' + error.message + ')');
+        // Status 0 is the one failure that silently kills a source, so spell out
+        // *why* the request died rather than echoing the raw Java exception.
+        log('network error: ' + briefUrl(url) + ' (' + error.message + ')' +
+            networkFailureHint(error.message));
         return { ok: false, status: 0, text: '', error: error.message };
     }
 }
@@ -274,10 +335,15 @@ export async function loadMaster(url) {
         return null;
     }
     if (!looksLikePlaylist(result.text)) {
-        // The CDN answers 200 text/html with a decoy page when the Referer is
-        // missing, so this is the signature of a stripped/blocked header.
-        log('master playlist is NOT HLS (got ' + result.text.length + ' bytes of ' +
-            (result.text.indexOf('<') === 0 ? 'HTML' : 'unknown') + ') — headers likely stripped');
+        // Either the CDN's decoy HTML (missing Referer) or a carrier block page.
+        // Distinguishing the two matters: one is fixable here, the other is not.
+        const blocked = blockPageReason(result.text);
+        if (blocked) {
+            log('master playlist got a ' + blocked + ' — this network is blocking the CDN');
+        } else {
+            log('master playlist is NOT HLS (got ' + result.text.length + ' bytes of ' +
+                (result.text.indexOf('<') === 0 ? 'HTML' : 'unknown') + ') — headers likely stripped');
+        }
         return null;
     }
     const parsed = parseMasterPlaylist(result.text, url);

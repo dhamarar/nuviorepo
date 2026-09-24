@@ -1,6 +1,6 @@
 /**
  * atlantic - Built from src/atlantic/
- * Generated: 2026-09-24T07:46:06.133Z
+ * Generated: 2026-09-24T08:10:04.547Z
  */
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -224,6 +224,44 @@ function keysOf2(data) {
     return "none";
   return Object.keys(data).join(",") || "none";
 }
+function networkFailureHint(message) {
+  const text = String(message || "");
+  if (text.indexOf("SSLPeerUnverifiedException") !== -1) {
+    return " TLS hostname verification FAILED \u2014 something is intercepting this host (read the `DN:` line in the Fetch bridge error above; if it is not the host's real certificate, a carrier/ISP proxy answered instead)";
+  }
+  if (text.indexOf("Trust anchor") !== -1 || text.indexOf("CertPathValidatorException") !== -1) {
+    return " TLS certificate is not trusted \u2014 an intercepting proxy is presenting its own cert";
+  }
+  if (text.indexOf("UnknownHost") !== -1) {
+    return " DNS lookup failed \u2014 the host did not resolve (blocked or hijacked DNS?)";
+  }
+  if (text.indexOf("ETIMEDOUT") !== -1 || text.indexOf("timeout") !== -1) {
+    return " the connection timed out";
+  }
+  if (text.indexOf("ECONNREFUSED") !== -1) {
+    return " the host refused the connection";
+  }
+  return "";
+}
+function blockPageReason(text) {
+  const body = String(text || "");
+  if (!body)
+    return "";
+  const lower = body.toLowerCase();
+  if (lower.indexOf("internetpositif") !== -1) {
+    return "carrier block page (internetpositif.ioh.co.id)";
+  }
+  if (lower.indexOf("trustpositif") !== -1 || lower.indexOf("internet sehat") !== -1 || lower.indexOf("akses diblokir") !== -1 || lower.indexOf("situs diblokir") !== -1) {
+    return 'carrier "Internet Positif" block page';
+  }
+  if (lower.indexOf("ioh.co.id") !== -1) {
+    return "Indosat (ioh.co.id) carrier landing page";
+  }
+  if (lower.indexOf("<html") !== -1 && body.indexOf("{") === -1) {
+    return "HTML page where JSON was expected (headers stripped, or a proxy answered)";
+  }
+  return "";
+}
 function summarise(data) {
   if (!data || typeof data !== "object")
     return String(data);
@@ -250,7 +288,7 @@ function fetchText(url, options) {
       const text = yield response.text();
       return { ok: response.ok, status: response.status, text };
     } catch (error) {
-      log("network error: " + briefUrl(url) + " (" + error.message + ")");
+      log("network error: " + briefUrl(url) + " (" + error.message + ")" + networkFailureHint(error.message));
       return { ok: false, status: 0, text: "", error: error.message };
     }
   });
@@ -401,7 +439,12 @@ function loadMaster(url) {
       return null;
     }
     if (!looksLikePlaylist(result.text)) {
-      log("master playlist is NOT HLS (got " + result.text.length + " bytes of " + (result.text.indexOf("<") === 0 ? "HTML" : "unknown") + ") \u2014 headers likely stripped");
+      const blocked = blockPageReason(result.text);
+      if (blocked) {
+        log("master playlist got a " + blocked + " \u2014 this network is blocking the CDN");
+      } else {
+        log("master playlist is NOT HLS (got " + result.text.length + " bytes of " + (result.text.indexOf("<") === 0 ? "HTML" : "unknown") + ") \u2014 headers likely stripped");
+      }
       return null;
     }
     const parsed = parseMasterPlaylist(result.text, url);
@@ -562,6 +605,8 @@ function decryptHandshakePayload(keyHex, payloadHex) {
   const raw = String(payloadHex || "");
   if (raw.length < 24 + 32 + 32)
     return "";
+  if (!/^[0-9a-f]+$/i.test(raw))
+    return "";
   const ivHex = raw.slice(0, 24);
   const bodyHex = raw.slice(24);
   const dataHex = bodyHex.slice(0, bodyHex.length - 32);
@@ -604,11 +649,20 @@ function handshake(name) {
       log(name + ": handshake network error (" + error.message + ")");
       throw error;
     }
+    if (response.status === 0) {
+      log(name + ': handshake got NO response (status 0) \u2014 the request never completed. Look for the "Fetch bridge error" line above; a TLS/DNS failure means this network is blocking ' + source.base);
+      throw new Error(name + " handshake got no response (status 0)");
+    }
     if (!response.ok) {
       log(name + ": handshake HTTP " + response.status + " (gate rejected the signature)");
       throw new Error(name + " handshake failed (HTTP " + response.status + ")");
     }
     const text = yield response.text();
+    const blocked = blockPageReason(text);
+    if (blocked) {
+      log(name + ": handshake answered with a " + blocked + " \u2014 this network is blocking " + source.base + ", the provider cannot fix that");
+      throw new Error(name + " handshake blocked by the network (" + blocked + ")");
+    }
     let payload = null;
     try {
       payload = JSON.parse(text);
@@ -619,14 +673,19 @@ function handshake(name) {
       log(name + ": handshake returned no payload (body starts: " + String(text).slice(0, 60) + ")");
       throw new Error(name + " handshake returned no payload");
     }
+    const raw = String(payload.d);
+    if (raw.length < 88 || !/^[0-9a-f]+$/i.test(raw)) {
+      log(name + ": handshake payload is not gate ciphertext (" + raw.length + " chars, " + (/^[0-9a-f]+$/i.test(raw) ? "valid hex" : "NOT hex") + ") \u2014 wrong key/endpoint, or the body was rewritten in transit");
+      throw new Error(name + " handshake payload is not ciphertext");
+    }
     let session = null;
     try {
-      session = JSON.parse(decryptHandshakePayload(source.keyHex, payload.d));
+      session = JSON.parse(decryptHandshakePayload(source.keyHex, raw));
     } catch (error) {
       session = null;
     }
     if (!session || !session.sid || !session.skey) {
-      log(name + ": handshake payload could NOT be decrypted (crypto-js unavailable?)");
+      log(name + ": handshake decrypted to something that is not a session (crypto-js missing, or keyHex/code in constants.js is stale)");
       throw new Error(name + " handshake payload could not be decrypted");
     }
     log(name + ": handshake ok, session expires in " + (session.exp ? Number(session.exp) - nowSeconds() + "s" : "unknown"));
