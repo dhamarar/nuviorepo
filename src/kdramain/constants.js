@@ -1,0 +1,65 @@
+export const MAIN_URL = "https://k-drama.in";
+export const VIDSYNC_URL = "https://vidsync.pro";
+
+export const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
+export const DEFAULT_HEADERS = {
+    "User-Agent": USER_AGENT,
+    "Referer": `${MAIN_URL}/`,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9"
+};
+
+export const LANGUAGE_MAP = {
+    "english": { code: "en", name: "English" },
+    "indonesia": { code: "id", name: "Indonesian" },
+    "indonesian": { code: "id", name: "Indonesian" },
+    "hindi": { code: "hi", name: "Hindi" },
+    "français": { code: "fr", name: "French" },
+    "francais": { code: "fr", name: "French" },
+    "french": { code: "fr", name: "French" },
+    "española": { code: "es", name: "Spanish" },
+    "espanola": { code: "es", name: "Spanish" },
+    "spanish": { code: "es", name: "Spanish" },
+    "spanish (latam)": { code: "es-419", name: "Spanish (Latin America)" },
+    "português": { code: "pt", name: "Portuguese" },
+    "portugues": { code: "pt", name: "Portuguese" },
+    "portuguese": { code: "pt", name: "Portuguese" },
+    "portuguese (brazil)": { code: "pt-br", name: "Portuguese (Brazil)" },
+    "arabic": { code: "ar", name: "Arabic" },
+    "العربية": { code: "ar", name: "Arabic" },
+    "বাংলা": { code: "bn", name: "Bengali" },
+    "bengali": { code: "bn", name: "Bengali" },
+    "deutsch": { code: "de", name: "German" },
+    "german": { code: "de", name: "German" },
+    "italian": { code: "it", name: "Italian" },
+    "italiano": { code: "it", name: "Italian" },
+    "melayu": { code: "ms", name: "Malay" },
+    "malay": { code: "ms", name: "Malay" },
+    "русский": { code: "ru", name: "Russian" },
+    "russian": { code: "ru", name: "Russian" },
+    "ภาษาไทย": { code: "th", name: "Thai" },
+    "thai": { code: "th", name: "Thai" },
+    "filipino": { code: "fil", name: "Filipino" },
+    "tagalog": { code: "tl", name: "Tagalog" },
+    "türk": { code: "tr", name: "Turkish" },
+    "türkçe": { code: "tr", name: "Turkish" },
+    "turkish": { code: "tr", name: "Turkish" },
+    "اردو": { code: "ur", name: "Urdu" },
+    "urdu": { code: "ur", name: "Urdu" },
+    "tiếng việt": { code: "vi", name: "Vietnamese" },
+    "tieng viet": { code: "vi", name: "Vietnamese" },
+    "vietnamese": { code: "vi", name: "Vietnamese" },
+    "中文": { code: "zh", name: "Chinese" },
+    "chinese": { code: "zh", name: "Chinese" },
+    "korean": { code: "ko", name: "Korean" },
+    "한국어": { code: "ko", name: "Korean" },
+    "japanese": { code: "ja", name: "Japanese" },
+    "日本語": { code: "ja", name: "Japanese" },
+    "ਪੰਜਾਬੀ": { code: "pa", name: "Punjabi" },
+    "punjabi": { code: "pa", name: "Punjabi" },
+    "ខ្មែរ": { code: "km", name: "Khmer" },
+    "khmer": { code: "km", name: "Khmer" },
+    "မြန်မာ": { code: "my", name: "Burmese" },
+    "burmese": { code: "my", name: "Burmese" }
+};
