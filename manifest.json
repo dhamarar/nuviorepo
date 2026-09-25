@@ -3,54 +3,6 @@
   "version": "1.6.0",
   "scrapers": [
     {
-      "id": "fibwatch",
-      "name": "FibWatch",
-      "description": "Watch Movies, Series, Anime in English & Hindi",
-      "version": "1.0.0",
-      "author": "Nuvio Team",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/fibwatch.js",
-      "enabled": true,
-      "formats": [
-        "mkv",
-        "m3u8"
-      ],
-      "logo": "https://i.postimg.cc/sfLR6dMm/fibwatch.png",
-      "contentLanguage": [
-        "en",
-        "hi"
-      ]
-    },
-    {
-      "id": "netmirror",
-      "name": "NetMirror",
-      "description": "Netflix | Prime | Disney",
-      "version": "1.0.0",
-      "author": "Dustincos",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/netmirror.js",
-      "enabled": true,
-      "hasSettings": true,
-      "formats": [
-        "mp4",
-        "m3u8",
-        "mkv"
-      ],
-      "logo": "https://i.postimg.cc/L64M3bYV/netmirror.png",
-      "contentLanguage": [
-        "en",
-        "hi",
-        "ta",
-        "te"
-      ]
-    },
-    {
       "id": "cinejoy",
       "name": "Cinejoy",
       "description": "Cinejoy streaming provider with multi-server support and multi-language subtitles",
@@ -92,6 +44,79 @@
       "contentLanguage": [
         "en",
         "id"
+      ]
+    },
+    {
+      "id": "fibwatch",
+      "name": "FibWatch",
+      "description": "Watch Movies, Series, Anime in English & Hindi",
+      "version": "1.0.0",
+      "author": "Nuvio Team",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/fibwatch.js",
+      "enabled": true,
+      "formats": [
+        "mkv",
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/sfLR6dMm/fibwatch.png",
+      "contentLanguage": [
+        "en",
+        "hi"
+      ]
+    },
+    {
+      "id": "kdramain",
+      "name": "KDrama",
+      "description": "Watch Korean dramas, Asian series, and movies from k-drama.in with multi-server and multi-language subtitles",
+      "version": "1.0.0",
+      "author": "Nuvio Team",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/kdramain.js",
+      "enabled": true,
+      "hasSettings": true,
+      "formats": [
+        "m3u8",
+        "mp4"
+      ],
+      "logo": "https://www.google.com/s2/favicons?domain=k-drama.in&sz=128",
+      "contentLanguage": [
+        "en",
+        "ko",
+        "id",
+        "hi"
+      ]
+    },
+    {
+      "id": "netmirror",
+      "name": "NetMirror",
+      "description": "Netflix | Prime | Disney",
+      "version": "1.0.0",
+      "author": "Dustincos",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/netmirror.js",
+      "enabled": true,
+      "hasSettings": true,
+      "formats": [
+        "mp4",
+        "m3u8",
+        "mkv"
+      ],
+      "logo": "https://i.postimg.cc/L64M3bYV/netmirror.png",
+      "contentLanguage": [
+        "en",
+        "hi",
+        "ta",
+        "te"
       ]
     },
     {
@@ -137,31 +162,6 @@
       "contentLanguage": [
         "en",
         "es"
-      ]
-    },
-    {
-      "id": "kdramain",
-      "name": "KDrama",
-      "description": "Watch Korean dramas, Asian series, and movies from k-drama.in with multi-server and multi-language subtitles",
-      "version": "1.0.0",
-      "author": "Nuvio Team",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/kdramain.js",
-      "enabled": true,
-      "hasSettings": true,
-      "formats": [
-        "m3u8",
-        "mp4"
-      ],
-      "logo": "https://www.google.com/s2/favicons?domain=k-drama.in&sz=128",
-      "contentLanguage": [
-        "en",
-        "ko",
-        "id",
-        "hi"
       ]
     },
     {
