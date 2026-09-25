@@ -1,6 +1,6 @@
 {
   "name": "Nuvio Repo",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "scrapers": [
     {
       "id": "fibwatch",
@@ -54,7 +54,7 @@
       "id": "cinejoy",
       "name": "Cinejoy",
       "description": "Cinejoy streaming provider with multi-server support and multi-language subtitles",
-      "version": "2.4.0",
+      "version": "2.5.0",
       "author": "Nuvio Team",
       "supportedTypes": [
         "movie",

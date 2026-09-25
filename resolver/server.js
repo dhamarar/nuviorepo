@@ -396,7 +396,7 @@ async function handleRequest(req, res) {
                                 const badge = getQualityBadge(v.height);
                                 const qualityLabel = badge === "4K" ? "4K (2160p)" : `${v.height}p`;
                                 streams.push({
-                                    name: "Cinejoy",
+                                    name: `Cinejoy - ${serverDisplayName} - ${qualityLabel}`,
                                     title: `Cinejoy - ${serverDisplayName} - ${qualityLabel}`,
                                     url: `${origin}/api/playlist?url=${encodeURIComponent(item.playlist)}&height=${v.height}`,
                                     quality: badge,
@@ -408,7 +408,7 @@ async function handleRequest(req, res) {
                     } catch (mErr) {}
 
                     streams.push({
-                        name: "Cinejoy",
+                        name: `Cinejoy - ${serverDisplayName} - Auto (Adaptive)`,
                         title: `Cinejoy - ${serverDisplayName} - Auto (Adaptive)`,
                         url: item.playlist,
                         quality: "Auto",
@@ -420,7 +420,7 @@ async function handleRequest(req, res) {
                         const fileObj = item.qualities[qKey];
                         if (fileObj?.url) {
                             streams.push({
-                                name: "Cinejoy",
+                                name: `Cinejoy - ${serverDisplayName} - ${qKey}`,
                                 title: `Cinejoy - ${serverDisplayName} - ${qKey}`,
                                 url: fileObj.url,
                                 quality: getQualityBadge(parseInt(qKey, 10)) || qKey,

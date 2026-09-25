@@ -1,6 +1,6 @@
 /**
  * cinejoy - Built from src/cinejoy/
- * Generated: 2026-09-24T07:48:45.002Z
+ * Generated: 2026-09-25T01:21:10.432Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -1035,6 +1035,26 @@ function normalizeQuality(qKey) {
     return "360p";
   return getQualityBadge(parseInt(s, 10));
 }
+function qualityLabel(q) {
+  const badge = normalizeQuality(q);
+  if (badge === "4K")
+    return "4K (2160p)";
+  if (!badge || badge === "Auto")
+    return "Auto (Adaptive)";
+  return badge;
+}
+function streamLabel(serverDisplayName, label) {
+  return `Cinejoy - ${serverDisplayName} - ${label}`;
+}
+function relabelResolverStreams(list, serverDisplayName) {
+  return list.map((st) => {
+    if (!st || typeof st !== "object")
+      return st;
+    const match = String(st.title || "").match(/^Cinejoy\s*-\s*[^-]+?\s*-\s*(.+)$/i);
+    const label = match ? match[1].trim() : qualityLabel(st.quality);
+    return __spreadProps(__spreadValues({}, st), { name: streamLabel(serverDisplayName, label) });
+  });
+}
 function onSettings() {
   return __async(this, null, function* () {
     return [
@@ -1106,7 +1126,7 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
               if (rRes.ok) {
                 const rJson = yield rRes.json();
                 if (Array.isArray(rJson == null ? void 0 : rJson.streams) && rJson.streams.length > 0) {
-                  return rJson.streams;
+                  return relabelResolverStreams(rJson.streams, serverDisplayName);
                 }
                 const rRawStreams = ((_a = rJson == null ? void 0 : rJson.data) == null ? void 0 : _a.stream) || [];
                 const parsedFromResolver = [];
@@ -1126,8 +1146,8 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
                           const badge = getQualityBadge(v.height);
                           const label = badge === "4K" ? "4K (2160p)" : `${v.height}p`;
                           parsedFromResolver.push({
-                            name: "Cinejoy",
-                            title: `Cinejoy - ${serverDisplayName} - ${label}`,
+                            name: streamLabel(serverDisplayName, label),
+                            title: streamLabel(serverDisplayName, label),
                             url: `${customResolver}/api/playlist?url=${encodeURIComponent(item.playlist)}&height=${v.height}`,
                             quality: badge,
                             headers: streamHeaders,
@@ -1138,8 +1158,8 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
                     } catch (e) {
                     }
                     parsedFromResolver.push({
-                      name: "Cinejoy",
-                      title: `Cinejoy - ${serverDisplayName} - Auto (Adaptive)`,
+                      name: streamLabel(serverDisplayName, "Auto (Adaptive)"),
+                      title: streamLabel(serverDisplayName, "Auto (Adaptive)"),
                       url: item.playlist,
                       quality: "Auto",
                       headers: streamHeaders,
@@ -1217,8 +1237,8 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
                     const badge = getQualityBadge(v.height);
                     const label = badge === "4K" ? "4K (2160p)" : `${v.height}p`;
                     serverStreams.push({
-                      name: "Cinejoy",
-                      title: `Cinejoy - ${serverDisplayName} - ${label}`,
+                      name: streamLabel(serverDisplayName, label),
+                      title: streamLabel(serverDisplayName, label),
                       url: customResolver ? `${customResolver}/api/playlist?url=${encodeURIComponent(playlist)}&height=${v.height}` : v.url,
                       quality: badge,
                       headers: streamHeaders,
@@ -1230,8 +1250,8 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
                 console.warn(`[Cinejoy] Failed to parse HLS variants for ${server}:`, mErr.message);
               }
               serverStreams.push({
-                name: "Cinejoy",
-                title: `Cinejoy - ${serverDisplayName} - Auto (Adaptive)`,
+                name: streamLabel(serverDisplayName, "Auto (Adaptive)"),
+                title: streamLabel(serverDisplayName, "Auto (Adaptive)"),
                 url: playlist,
                 quality: "Auto",
                 headers: streamHeaders,
@@ -1244,9 +1264,10 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
                 const fileUrl = qObj == null ? void 0 : qObj.url;
                 if (fileUrl && fileUrl.startsWith("http")) {
                   const badge = normalizeQuality(qKey);
+                  const label = badge === "4K" ? "4K (2160p)" : qKey;
                   serverStreams.push({
-                    name: "Cinejoy",
-                    title: `Cinejoy - ${serverDisplayName} - ${badge === "4K" ? "4K (2160p)" : qKey}`,
+                    name: streamLabel(serverDisplayName, label),
+                    title: streamLabel(serverDisplayName, label),
                     url: fileUrl,
                     quality: badge,
                     headers: streamHeaders,

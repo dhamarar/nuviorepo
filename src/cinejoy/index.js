@@ -55,6 +55,33 @@ function normalizeQuality(qKey) {
     return getQualityBadge(parseInt(s, 10));
 }
 
+// Display label used for both `title` and `name`, e.g. "4K (2160p)" / "1080p" /
+// "Auto (Adaptive)". Every stream carries the server it came from so the picker
+// reads "Cinejoy - Lisbon - 1080p" instead of a wall of identical "Cinejoy" rows.
+function qualityLabel(q) {
+    const badge = normalizeQuality(q);
+    if (badge === "4K") return "4K (2160p)";
+    if (!badge || badge === "Auto") return "Auto (Adaptive)";
+    return badge;
+}
+
+function streamLabel(serverDisplayName, label) {
+    return `Cinejoy - ${serverDisplayName} - ${label}`;
+}
+
+// A custom resolver may still answer with generic `name: "Cinejoy"` (older
+// deployments), so re-stamp every stream it returns with the server we asked
+// for. The label is taken from the resolver's own title when it already carries
+// one, and derived from `quality` otherwise.
+function relabelResolverStreams(list, serverDisplayName) {
+    return list.map((st) => {
+        if (!st || typeof st !== 'object') return st;
+        const match = String(st.title || '').match(/^Cinejoy\s*-\s*[^-]+?\s*-\s*(.+)$/i);
+        const label = match ? match[1].trim() : qualityLabel(st.quality);
+        return { ...st, name: streamLabel(serverDisplayName, label) };
+    });
+}
+
 async function onSettings() {
     return [
         { type: "header", label: "Cinejoy Configuration" },
@@ -143,7 +170,7 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
                             const rJson = await rRes.json();
                             // If resolver returns pre-extracted multi-quality streams
                             if (Array.isArray(rJson?.streams) && rJson.streams.length > 0) {
-                                return rJson.streams;
+                                return relabelResolverStreams(rJson.streams, serverDisplayName);
                             }
 
                             // Otherwise parse stream list
@@ -166,8 +193,8 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
                                                 const badge = getQualityBadge(v.height);
                                                 const label = badge === "4K" ? "4K (2160p)" : `${v.height}p`;
                                                 parsedFromResolver.push({
-                                                    name: "Cinejoy",
-                                                    title: `Cinejoy - ${serverDisplayName} - ${label}`,
+                                                    name: streamLabel(serverDisplayName, label),
+                                                    title: streamLabel(serverDisplayName, label),
                                                     url: `${customResolver}/api/playlist?url=${encodeURIComponent(item.playlist)}&height=${v.height}`,
                                                     quality: badge,
                                                     headers: streamHeaders,
@@ -178,8 +205,8 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
                                     } catch (e) {}
 
                                     parsedFromResolver.push({
-                                        name: "Cinejoy",
-                                        title: `Cinejoy - ${serverDisplayName} - Auto (Adaptive)`,
+                                        name: streamLabel(serverDisplayName, "Auto (Adaptive)"),
+                                        title: streamLabel(serverDisplayName, "Auto (Adaptive)"),
                                         url: item.playlist,
                                         quality: "Auto",
                                         headers: streamHeaders,
@@ -271,8 +298,8 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
                                     const badge = getQualityBadge(v.height);
                                     const label = badge === "4K" ? "4K (2160p)" : `${v.height}p`;
                                     serverStreams.push({
-                                        name: "Cinejoy",
-                                        title: `Cinejoy - ${serverDisplayName} - ${label}`,
+                                        name: streamLabel(serverDisplayName, label),
+                                        title: streamLabel(serverDisplayName, label),
                                         url: customResolver
                                             ? `${customResolver}/api/playlist?url=${encodeURIComponent(playlist)}&height=${v.height}`
                                             : v.url,
@@ -288,8 +315,8 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
 
                         // Always include Auto / Master playlist
                         serverStreams.push({
-                            name: "Cinejoy",
-                            title: `Cinejoy - ${serverDisplayName} - Auto (Adaptive)`,
+                            name: streamLabel(serverDisplayName, "Auto (Adaptive)"),
+                            title: streamLabel(serverDisplayName, "Auto (Adaptive)"),
                             url: playlist,
                             quality: "Auto",
                             headers: streamHeaders,
@@ -302,9 +329,10 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
                             const fileUrl = qObj?.url;
                             if (fileUrl && fileUrl.startsWith('http')) {
                                 const badge = normalizeQuality(qKey);
+                                const label = badge === '4K' ? '4K (2160p)' : qKey;
                                 serverStreams.push({
-                                    name: "Cinejoy",
-                                    title: `Cinejoy - ${serverDisplayName} - ${badge === '4K' ? '4K (2160p)' : qKey}`,
+                                    name: streamLabel(serverDisplayName, label),
+                                    title: streamLabel(serverDisplayName, label),
                                     url: fileUrl,
                                     quality: badge,
                                     headers: streamHeaders,
