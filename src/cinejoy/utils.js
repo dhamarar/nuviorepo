@@ -112,33 +112,3 @@ export async function getTmdbDetails(tmdbId, mediaType = "movie") {
     }
 }
 
-export async function fetchOpenSubtitles(imdbId, isTv = false, season = 1, episode = 1) {
-    const subtitles = [];
-    if (!imdbId) return subtitles;
-
-    try {
-        const subUrl = isTv
-            ? `https://opensubtitles-v3.strem.io/subtitles/series/${imdbId}:${season}:${episode}.json`
-            : `https://opensubtitles-v3.strem.io/subtitles/movie/${imdbId}.json`;
-
-        const subRes = await fetch(subUrl, {
-            headers: { "User-Agent": HEADERS["User-Agent"] }
-        });
-        if (!subRes.ok) return subtitles;
-
-        const subData = await subRes.json();
-        const arr = subData.subtitles || [];
-        for (const sub of arr) {
-            if (sub.url) {
-                subtitles.push({
-                    url: sub.url,
-                    language: (sub.lang || "en").toLowerCase(),
-                    name: sub.lang || "Subtitle"
-                });
-            }
-        }
-    } catch (e) {
-        console.warn("[Cinejoy] OpenSubtitles fetch error:", e.message);
-    }
-    return subtitles;
-}

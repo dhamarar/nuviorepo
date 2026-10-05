@@ -1,4 +1,4 @@
-import { resolveDomain, getActiveServers, getTmdbDetails, fetchOpenSubtitles } from './utils.js';
+import { resolveDomain, getActiveServers, getTmdbDetails } from './utils.js';
 import { seal } from './wasm.js';
 import { decrypt } from './crypto.js';
 import { HEADERS } from './constants.js';
@@ -148,13 +148,8 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
 
         const [domain, tmdbInfo] = await Promise.all([domainPromise, tmdbInfoPromise]);
 
-        // Step 2: Discover active servers and fetch OpenSubtitles concurrently
-        const serversPromise = getActiveServers(domain);
-        const openSubsPromise = tmdbInfo?.imdbId
-            ? fetchOpenSubtitles(tmdbInfo.imdbId, isTv, cleanSeason, cleanEpisode)
-            : Promise.resolve([]);
-
-        const [{ host: apiHost, servers }, openSubs] = await Promise.all([serversPromise, openSubsPromise]);
+        // Step 2: Discover active servers
+        const { host: apiHost, servers } = await getActiveServers(domain);
         console.log(`[Cinejoy] Active domain: ${domain}, API Host: ${apiHost}, Servers: ${servers.join(', ')}`);
 
         const streamHeaders = {
@@ -376,15 +371,6 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
         for (const resList of serverResults) {
             if (Array.isArray(resList)) {
                 for (const stream of resList) {
-                    // Supplement with OpenSubtitles if available
-                    if (openSubs && openSubs.length > 0) {
-                        const existingUrls = new Set(stream.subtitles.map(s => s.url));
-                        for (const os of openSubs) {
-                            if (!existingUrls.has(os.url)) {
-                                stream.subtitles.push(os);
-                            }
-                        }
-                    }
                     streams.push(stream);
                 }
             }
@@ -398,4 +384,4 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
     return streams;
 }
 
-module.exports = { getStreams, onSettings };
+export { getStreams, onSettings };
