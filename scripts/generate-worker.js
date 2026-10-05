@@ -143,9 +143,12 @@ async function decryptWithWebCrypto(encBytes, responseKey, keyId, ephemeralPubli
 }
 
 // Fallback to enc-dec API only if local WASM encounters an unexpected runtime error
-async function sealWithApiFallback(server, isTv, tmdb, season, episode) {
+async function sealWithApiFallback(server, isTv, tmdb, season, episode, imdb = "", title = "", year = "") {
     let sheguUrl = \`https://api.shegu.xyz/?type=\${isTv ? 'series' : 'movie'}&tmdb=\${tmdb}&server=\${server}\`;
     if (isTv) sheguUrl += \`&season=\${season}&episode=\${episode}\`;
+    if (title) sheguUrl += \`&title=\${encodeURIComponent(title)}\`;
+    if (year) sheguUrl += \`&year=\${year}\`;
+    if (imdb) sheguUrl += \`&imdb=\${imdb}\`;
 
     const encUrl = \`https://enc-dec.app/api/enc-cinejoy?url=\${encodeURIComponent(sheguUrl)}\`;
     const encRes = await fetch(encUrl, {
@@ -426,6 +429,9 @@ export default {
             const server = (url.searchParams.get("server") || "lisbon").toLowerCase();
             const season = url.searchParams.get("season") || "1";
             const episode = url.searchParams.get("episode") || "1";
+            const imdb = url.searchParams.get("imdb") || "";
+            const title = url.searchParams.get("title") || "";
+            const year = url.searchParams.get("year") || "";
 
             if (!tmdb) {
                 return new Response(JSON.stringify({ error: "Missing 'tmdb' query parameter" }), {
@@ -436,8 +442,20 @@ export default {
 
             const path = \`/\${server}/\${isTv ? "series" : "movie"}\`;
             const payloadObj = isTv
-                ? { tmdb: String(tmdb), season: String(season), episode: String(episode) }
-                : { tmdb: String(tmdb) };
+                ? {
+                    tmdb: String(tmdb),
+                    season: String(season),
+                    episode: String(episode),
+                    ...(imdb ? { imdb } : {}),
+                    ...(title ? { title } : {}),
+                    ...(year ? { year: String(year) } : {})
+                  }
+                : {
+                    tmdb: String(tmdb),
+                    ...(imdb ? { imdb } : {}),
+                    ...(title ? { title } : {}),
+                    ...(year ? { year: String(year) } : {})
+                  };
 
             try {
                 let sealed = null;
@@ -450,7 +468,7 @@ export default {
                 } catch (wasmErr) {
                     wasmError = wasmErr.message || String(wasmErr);
                     console.warn("Local WASM failed, falling back to enc-dec API:", wasmError);
-                    sealed = await sealWithApiFallback(server, isTv, tmdb, season, episode);
+                    sealed = await sealWithApiFallback(server, isTv, tmdb, season, episode, imdb, title, year);
                     usedFallback = true;
                 }
 
@@ -537,7 +555,7 @@ export default {
                                     const badge = getQualityBadge(v.height);
                                     const qualityLabel = badge === "4K" ? "4K (2160p)" : \`\${v.height}p\`;
                                     streams.push({
-                                        name: "Cinejoy",
+                                        name: \`Cinejoy - \${serverDisplayName} - \${qualityLabel}\`,
                                         title: \`Cinejoy - \${serverDisplayName} - \${qualityLabel}\`,
                                         url: \`\${origin}/api/playlist?url=\${encodeURIComponent(item.playlist)}&height=\${v.height}\`,
                                         quality: badge,
@@ -552,7 +570,7 @@ export default {
 
                         // Always include Auto / Master playlist
                         streams.push({
-                            name: "Cinejoy",
+                            name: \`Cinejoy - \${serverDisplayName} - Auto (Adaptive)\`,
                             title: \`Cinejoy - \${serverDisplayName} - Auto (Adaptive)\`,
                             url: item.playlist,
                             quality: "Auto",
@@ -564,7 +582,7 @@ export default {
                             const fileObj = item.qualities[qKey];
                             if (fileObj?.url) {
                                 streams.push({
-                                    name: "Cinejoy",
+                                    name: \`Cinejoy - \${serverDisplayName} - \${qKey}\`,
                                     title: \`Cinejoy - \${serverDisplayName} - \${qKey}\`,
                                     url: fileObj.url,
                                     quality: getQualityBadge(parseInt(qKey, 10)) || qKey,

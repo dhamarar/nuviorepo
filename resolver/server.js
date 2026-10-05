@@ -155,7 +155,8 @@ const CORS_HEADERS = {
 };
 
 async function handleRequest(req, res) {
-    const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    const proto = req.headers['x-forwarded-proto'] || (req.headers.host && req.headers.host.includes('localhost') ? 'http' : 'https');
+    const parsedUrl = new URL(req.url, `${proto}://${req.headers.host || 'localhost'}`);
     const pathname = parsedUrl.pathname;
     const origin = parsedUrl.origin;
 
@@ -328,6 +329,9 @@ async function handleRequest(req, res) {
         const server = (parsedUrl.searchParams.get("server") || "lisbon").toLowerCase();
         const season = parsedUrl.searchParams.get("season") || "1";
         const episode = parsedUrl.searchParams.get("episode") || "1";
+        const imdb = parsedUrl.searchParams.get("imdb") || "";
+        const title = parsedUrl.searchParams.get("title") || "";
+        const year = parsedUrl.searchParams.get("year") || "";
 
         if (!tmdb) {
             res.writeHead(400, { 'Content-Type': 'application/json', ...CORS_HEADERS });
@@ -337,8 +341,20 @@ async function handleRequest(req, res) {
 
         const pathStr = `/${server}/${isTv ? "series" : "movie"}`;
         const payloadObj = isTv
-            ? { tmdb: String(tmdb), season: String(season), episode: String(episode) }
-            : { tmdb: String(tmdb) };
+            ? {
+                tmdb: String(tmdb),
+                season: String(season),
+                episode: String(episode),
+                ...(imdb ? { imdb } : {}),
+                ...(title ? { title } : {}),
+                ...(year ? { year: String(year) } : {})
+              }
+            : {
+                tmdb: String(tmdb),
+                ...(imdb ? { imdb } : {}),
+                ...(title ? { title } : {}),
+                ...(year ? { year: String(year) } : {})
+              };
 
         try {
             const sealed = await sealWithWasm(pathStr, payloadObj);

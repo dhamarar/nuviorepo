@@ -17,7 +17,7 @@ export const CANDIDATE_API_HOSTS = [
 export const TMDB_BASE_URL = "https://api.themoviedb.org/3";
 export const TMDB_API_KEY = "8476a7ab80ad76f0936744df0430e67c";
 
-export const FALLBACK_SERVERS = ["Lisbon", "Nebula", "Solara", "Athens"];
+export const FALLBACK_SERVERS = ["Nebula", "Lisbon", "Scout", "Riga", "Solara", "Athens"];
 
 export const ENC_DEC_API = "https://enc-dec.app/api/enc-cinejoy";
 

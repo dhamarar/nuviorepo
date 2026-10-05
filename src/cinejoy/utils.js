@@ -63,11 +63,19 @@ export async function getActiveServers(domain = DEFAULT_DOMAIN) {
                 if (Array.isArray(arr) && arr.length > 0) {
                     cachedApiHost = host;
                     const validServers = [];
+                    const seen = new Set();
                     for (const s of arr) {
                         const name = (s.name || "").trim();
                         const status = (s.status || "").toLowerCase().trim();
                         if (name && (status === "" || status === "ok")) {
                             validServers.push(name);
+                            seen.add(name.toLowerCase());
+                        }
+                    }
+                    for (const fallback of FALLBACK_SERVERS) {
+                        if (!seen.has(fallback.toLowerCase())) {
+                            validServers.push(fallback);
+                            seen.add(fallback.toLowerCase());
                         }
                     }
                     if (validServers.length > 0) return { host: cachedApiHost, servers: validServers };

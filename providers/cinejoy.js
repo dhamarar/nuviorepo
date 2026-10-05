@@ -1,6 +1,6 @@
 /**
  * cinejoy - Built from src/cinejoy/
- * Generated: 2026-09-25T01:21:10.432Z
+ * Generated: 2026-10-05T08:04:47.560Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -61,7 +61,7 @@ var CANDIDATE_API_HOSTS = [
 ];
 var TMDB_BASE_URL = "https://api.themoviedb.org/3";
 var TMDB_API_KEY = "8476a7ab80ad76f0936744df0430e67c";
-var FALLBACK_SERVERS = ["Lisbon", "Nebula", "Solara", "Athens"];
+var FALLBACK_SERVERS = ["Nebula", "Lisbon", "Scout", "Riga", "Solara", "Athens"];
 var ENC_DEC_API = "https://enc-dec.app/api/enc-cinejoy";
 var HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -115,11 +115,19 @@ function getActiveServers() {
           if (Array.isArray(arr) && arr.length > 0) {
             cachedApiHost = host;
             const validServers = [];
+            const seen = /* @__PURE__ */ new Set();
             for (const s of arr) {
               const name = (s.name || "").trim();
               const status = (s.status || "").toLowerCase().trim();
               if (name && (status === "" || status === "ok")) {
                 validServers.push(name);
+                seen.add(name.toLowerCase());
+              }
+            }
+            for (const fallback of FALLBACK_SERVERS) {
+              if (!seen.has(fallback.toLowerCase())) {
+                validServers.push(fallback);
+                seen.add(fallback.toLowerCase());
               }
             }
             if (validServers.length > 0)
@@ -1046,13 +1054,21 @@ function qualityLabel(q) {
 function streamLabel(serverDisplayName, label) {
   return `Cinejoy - ${serverDisplayName} - ${label}`;
 }
-function relabelResolverStreams(list, serverDisplayName) {
+function relabelResolverStreams(list, serverDisplayName, customResolver = "") {
   return list.map((st) => {
     if (!st || typeof st !== "object")
       return st;
     const match = String(st.title || "").match(/^Cinejoy\s*-\s*[^-]+?\s*-\s*(.+)$/i);
     const label = match ? match[1].trim() : qualityLabel(st.quality);
-    return __spreadProps(__spreadValues({}, st), { name: streamLabel(serverDisplayName, label) });
+    let url = st.url || "";
+    if (url.startsWith("http://") && customResolver && customResolver.startsWith("https://")) {
+      url = url.replace(/^http:\/\//i, "https://");
+    }
+    return __spreadProps(__spreadValues({}, st), {
+      name: streamLabel(serverDisplayName, label),
+      title: streamLabel(serverDisplayName, label),
+      url
+    });
   });
 }
 function onSettings() {
@@ -1119,14 +1135,14 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
           const serverDisplayName = server.charAt(0).toUpperCase() + server.slice(1);
           if (customResolver) {
             try {
-              const targetUrl = `${customResolver}/api/stream?tmdb=${cleanTmdb}&type=${isTv ? "series" : "movie"}&server=${encodeURIComponent(server)}&season=${cleanSeason}&episode=${cleanEpisode}`;
+              const targetUrl = `${customResolver}/api/stream?tmdb=${cleanTmdb}&type=${isTv ? "series" : "movie"}&server=${encodeURIComponent(server)}&season=${cleanSeason}&episode=${cleanEpisode}&imdb=${encodeURIComponent((tmdbInfo == null ? void 0 : tmdbInfo.imdbId) || "")}&title=${encodeURIComponent((tmdbInfo == null ? void 0 : tmdbInfo.title) || "")}&year=${encodeURIComponent((tmdbInfo == null ? void 0 : tmdbInfo.year) || "")}`;
               const rRes = yield fetch(targetUrl, {
                 headers: { "User-Agent": HEADERS["User-Agent"] }
               });
               if (rRes.ok) {
                 const rJson = yield rRes.json();
                 if (Array.isArray(rJson == null ? void 0 : rJson.streams) && rJson.streams.length > 0) {
-                  return relabelResolverStreams(rJson.streams, serverDisplayName);
+                  return relabelResolverStreams(rJson.streams, serverDisplayName, customResolver);
                 }
                 const rRawStreams = ((_a = rJson == null ? void 0 : rJson.data) == null ? void 0 : _a.stream) || [];
                 const parsedFromResolver = [];
@@ -1177,7 +1193,13 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
             }
           }
           const path = `/${server.toLowerCase()}/${isTv ? "series" : "movie"}`;
-          const payloadObj = isTv ? { tmdb: cleanTmdb, season: String(cleanSeason), episode: String(cleanEpisode) } : { tmdb: cleanTmdb };
+          const payloadObj = isTv ? __spreadValues(__spreadValues(__spreadValues({
+            tmdb: cleanTmdb,
+            season: String(cleanSeason),
+            episode: String(cleanEpisode)
+          }, (tmdbInfo == null ? void 0 : tmdbInfo.imdbId) ? { imdb: tmdbInfo.imdbId } : {}), (tmdbInfo == null ? void 0 : tmdbInfo.title) ? { title: tmdbInfo.title } : {}), (tmdbInfo == null ? void 0 : tmdbInfo.year) ? { year: String(tmdbInfo.year) } : {}) : __spreadValues(__spreadValues(__spreadValues({
+            tmdb: cleanTmdb
+          }, (tmdbInfo == null ? void 0 : tmdbInfo.imdbId) ? { imdb: tmdbInfo.imdbId } : {}), (tmdbInfo == null ? void 0 : tmdbInfo.title) ? { title: tmdbInfo.title } : {}), (tmdbInfo == null ? void 0 : tmdbInfo.year) ? { year: String(tmdbInfo.year) } : {});
           const serverInfo = {
             server,
             isTv,

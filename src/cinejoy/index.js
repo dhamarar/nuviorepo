@@ -73,12 +73,21 @@ function streamLabel(serverDisplayName, label) {
 // deployments), so re-stamp every stream it returns with the server we asked
 // for. The label is taken from the resolver's own title when it already carries
 // one, and derived from `quality` otherwise.
-function relabelResolverStreams(list, serverDisplayName) {
+function relabelResolverStreams(list, serverDisplayName, customResolver = "") {
     return list.map((st) => {
         if (!st || typeof st !== 'object') return st;
         const match = String(st.title || '').match(/^Cinejoy\s*-\s*[^-]+?\s*-\s*(.+)$/i);
         const label = match ? match[1].trim() : qualityLabel(st.quality);
-        return { ...st, name: streamLabel(serverDisplayName, label) };
+        let url = st.url || "";
+        if (url.startsWith('http://') && customResolver && customResolver.startsWith('https://')) {
+            url = url.replace(/^http:\/\//i, 'https://');
+        }
+        return {
+            ...st,
+            name: streamLabel(serverDisplayName, label),
+            title: streamLabel(serverDisplayName, label),
+            url
+        };
     });
 }
 
@@ -162,7 +171,7 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
                 // Option A: If custom resolver is configured, fetch directly from resolver
                 if (customResolver) {
                     try {
-                        const targetUrl = `${customResolver}/api/stream?tmdb=${cleanTmdb}&type=${isTv ? 'series' : 'movie'}&server=${encodeURIComponent(server)}&season=${cleanSeason}&episode=${cleanEpisode}`;
+                        const targetUrl = `${customResolver}/api/stream?tmdb=${cleanTmdb}&type=${isTv ? 'series' : 'movie'}&server=${encodeURIComponent(server)}&season=${cleanSeason}&episode=${cleanEpisode}&imdb=${encodeURIComponent(tmdbInfo?.imdbId || '')}&title=${encodeURIComponent(tmdbInfo?.title || '')}&year=${encodeURIComponent(tmdbInfo?.year || '')}`;
                         const rRes = await fetch(targetUrl, {
                             headers: { "User-Agent": HEADERS["User-Agent"] }
                         });
@@ -170,7 +179,7 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
                             const rJson = await rRes.json();
                             // If resolver returns pre-extracted multi-quality streams
                             if (Array.isArray(rJson?.streams) && rJson.streams.length > 0) {
-                                return relabelResolverStreams(rJson.streams, serverDisplayName);
+                                return relabelResolverStreams(rJson.streams, serverDisplayName, customResolver);
                             }
 
                             // Otherwise parse stream list
@@ -226,8 +235,20 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
                 // Option B: Direct gateway request
                 const path = `/${server.toLowerCase()}/${isTv ? "series" : "movie"}`;
                 const payloadObj = isTv
-                    ? { tmdb: cleanTmdb, season: String(cleanSeason), episode: String(cleanEpisode) }
-                    : { tmdb: cleanTmdb };
+                    ? {
+                        tmdb: cleanTmdb,
+                        season: String(cleanSeason),
+                        episode: String(cleanEpisode),
+                        ...(tmdbInfo?.imdbId ? { imdb: tmdbInfo.imdbId } : {}),
+                        ...(tmdbInfo?.title ? { title: tmdbInfo.title } : {}),
+                        ...(tmdbInfo?.year ? { year: String(tmdbInfo.year) } : {})
+                      }
+                    : {
+                        tmdb: cleanTmdb,
+                        ...(tmdbInfo?.imdbId ? { imdb: tmdbInfo.imdbId } : {}),
+                        ...(tmdbInfo?.title ? { title: tmdbInfo.title } : {}),
+                        ...(tmdbInfo?.year ? { year: String(tmdbInfo.year) } : {})
+                      };
 
                 const serverInfo = {
                     server,
