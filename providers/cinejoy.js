@@ -1,10 +1,12 @@
 /**
  * cinejoy - Built from src/cinejoy/
- * Generated: 2026-10-05T08:04:47.560Z
+ * Generated: 2026-10-05T10:31:44.805Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropDescs = Object.getOwnPropertyDescriptors;
+var __getOwnPropNames = Object.getOwnPropertyNames;
 var __getOwnPropSymbols = Object.getOwnPropertySymbols;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
 var __propIsEnum = Object.prototype.propertyIsEnumerable;
@@ -21,6 +23,19 @@ var __spreadValues = (a, b) => {
   return a;
 };
 var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 var __publicField = (obj, key, value) => {
   __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
   return value;
@@ -45,6 +60,14 @@ var __async = (__this, __arguments, generator) => {
     step((generator = generator.apply(__this, __arguments)).next());
   });
 };
+
+// src/cinejoy/index.js
+var cinejoy_exports = {};
+__export(cinejoy_exports, {
+  getStreams: () => getStreams,
+  onSettings: () => onSettings
+});
+module.exports = __toCommonJS(cinejoy_exports);
 
 // src/cinejoy/constants.js
 var DEFAULT_DOMAIN = "https://cinejoy.pk";
@@ -164,35 +187,6 @@ function getTmdbDetails(tmdbId, mediaType = "movie") {
       console.warn("[Cinejoy] TMDB metadata fetch error:", e.message);
       return null;
     }
-  });
-}
-function fetchOpenSubtitles(imdbId, isTv = false, season = 1, episode = 1) {
-  return __async(this, null, function* () {
-    const subtitles = [];
-    if (!imdbId)
-      return subtitles;
-    try {
-      const subUrl = isTv ? `https://opensubtitles-v3.strem.io/subtitles/series/${imdbId}:${season}:${episode}.json` : `https://opensubtitles-v3.strem.io/subtitles/movie/${imdbId}.json`;
-      const subRes = yield fetch(subUrl, {
-        headers: { "User-Agent": HEADERS["User-Agent"] }
-      });
-      if (!subRes.ok)
-        return subtitles;
-      const subData = yield subRes.json();
-      const arr = subData.subtitles || [];
-      for (const sub of arr) {
-        if (sub.url) {
-          subtitles.push({
-            url: sub.url,
-            language: (sub.lang || "en").toLowerCase(),
-            name: sub.lang || "Subtitle"
-          });
-        }
-      }
-    } catch (e) {
-      console.warn("[Cinejoy] OpenSubtitles fetch error:", e.message);
-    }
-    return subtitles;
   });
 }
 
@@ -1120,9 +1114,7 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
       const domainPromise = resolveDomain();
       const tmdbInfoPromise = getTmdbDetails(cleanTmdb, isTv ? "tv" : "movie");
       const [domain, tmdbInfo] = yield Promise.all([domainPromise, tmdbInfoPromise]);
-      const serversPromise = getActiveServers(domain);
-      const openSubsPromise = (tmdbInfo == null ? void 0 : tmdbInfo.imdbId) ? fetchOpenSubtitles(tmdbInfo.imdbId, isTv, cleanSeason, cleanEpisode) : Promise.resolve([]);
-      const [{ host: apiHost, servers }, openSubs] = yield Promise.all([serversPromise, openSubsPromise]);
+      const { host: apiHost, servers } = yield getActiveServers(domain);
       console.log(`[Cinejoy] Active domain: ${domain}, API Host: ${apiHost}, Servers: ${servers.join(", ")}`);
       const streamHeaders = {
         "Origin": domain,
@@ -1309,14 +1301,6 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
       for (const resList of serverResults) {
         if (Array.isArray(resList)) {
           for (const stream of resList) {
-            if (openSubs && openSubs.length > 0) {
-              const existingUrls = new Set(stream.subtitles.map((s2) => s2.url));
-              for (const os of openSubs) {
-                if (!existingUrls.has(os.url)) {
-                  stream.subtitles.push(os);
-                }
-              }
-            }
             streams.push(stream);
           }
         }
@@ -1328,7 +1312,6 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
     return streams;
   });
 }
-module.exports = { getStreams, onSettings };
 /*! Bundled license information:
 
 @noble/ciphers/utils.js:
