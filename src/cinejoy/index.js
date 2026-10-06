@@ -101,6 +101,20 @@ async function onSettings() {
             label: "Custom Resolver URL (Optional)",
             placeholder: "https://your-cinejoy-worker.workers.dev",
             description: "Dedicated Cloudflare Worker / API endpoint for environments without raw binary HTTP support."
+        },
+        {
+            type: "select",
+            key: "maxSubtitlesPerLanguage",
+            label: "Max subtitles per language",
+            description: "Maximum subtitle tracks to keep per language (default: 3). Set to All to keep every track.",
+            options: [
+                { label: "1", value: "1" },
+                { label: "2", value: "2" },
+                { label: "3", value: "3" },
+                { label: "5", value: "5" },
+                { label: "All", value: "0" }
+            ],
+            defaultValue: "3"
         }
     ];
 }
@@ -142,17 +156,29 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
         console.log(`[Cinejoy] Using custom stream resolver: ${customResolver}`);
     }
 
+    let maxPerLang = 3;
+    if (settings.maxSubtitlesPerLanguage !== undefined) {
+        const parsed = Number(settings.maxSubtitlesPerLanguage);
+        if (!isNaN(parsed) && parsed >= 0) maxPerLang = parsed;
+    }
+
     try {
         // Step 1: Resolve domain and fetch TMDB info concurrently
         const domainPromise = resolveDomain();
         const tmdbInfoPromise = getTmdbDetails(cleanTmdb, isTv ? "tv" : "movie");
-        const subsPromise = tmdbInfoPromise.then(tmdbInfo => fetchAllSubtitles(cleanTmdb, isTv ? "tv" : "movie", cleanSeason, cleanEpisode, tmdbInfo?.imdbId));
 
-        const [domain, tmdbInfo, globalSubtitles] = await Promise.all([domainPromise, tmdbInfoPromise, subsPromise]);
+        const [domain, tmdbInfo] = await Promise.all([domainPromise, tmdbInfoPromise]);
 
-        // Step 2: Discover active servers
-        const { host: apiHost, servers } = await getActiveServers(domain);
+        // Step 2: Discover active servers and fetch subtitles concurrently
+        const serversPromise = getActiveServers(domain);
+        const subsPromise = fetchAllSubtitles(cleanTmdb, isTv ? "tv" : "movie", cleanSeason, cleanEpisode, tmdbInfo?.imdbId, maxPerLang);
+
+        const [{ host: apiHost, servers }, combinedSubtitles] = await Promise.all([
+            serversPromise,
+            subsPromise
+        ]);
         console.log(`[Cinejoy] Active domain: ${domain}, API Host: ${apiHost}, Servers: ${servers.join(', ')}`);
+        console.log(`[Cinejoy] Resolved ${combinedSubtitles.length} subtitle track(s)`);
 
         const streamHeaders = {
             "Origin": domain,
@@ -176,18 +202,37 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
                             const rJson = await rRes.json();
                             // If resolver returns pre-extracted multi-quality streams
                             if (Array.isArray(rJson?.streams) && rJson.streams.length > 0) {
-                                return relabelResolverStreams(rJson.streams, serverDisplayName, customResolver);
+                                const list = relabelResolverStreams(rJson.streams, serverDisplayName, customResolver);
+                                for (const st of list) {
+                                    const sSubs = [...combinedSubtitles];
+                                    const existing = new Set(sSubs.map(s => s.url));
+                                    for (const sub of (st.subtitles || [])) {
+                                        if (sub && sub.url && !existing.has(sub.url)) {
+                                            existing.add(sub.url);
+                                            sSubs.unshift(sub);
+                                        }
+                                    }
+                                    st.subtitles = sSubs;
+                                }
+                                return list;
                             }
 
                             // Otherwise parse stream list
                             const rRawStreams = rJson?.data?.stream || [];
                             const parsedFromResolver = [];
                             for (const item of rRawStreams) {
-                                const sSubs = [...globalSubtitles, ...(item.captions || []).map(c => ({
-                                    url: c.url,
-                                    language: (c.language || c.id || "en").toLowerCase(),
-                                    name: c.language || c.id || "Subtitle"
-                                })).filter(s => !!s.url)];
+                                const sSubs = [...combinedSubtitles];
+                                const sSubsSeen = new Set(sSubs.map(s => s.url));
+                                for (const c of (item.captions || [])) {
+                                    if (c.url && !sSubsSeen.has(c.url)) {
+                                        sSubsSeen.add(c.url);
+                                        sSubs.unshift({
+                                            url: c.url,
+                                            language: (c.language || c.id || "en").toLowerCase(),
+                                            name: c.language || c.id || "Subtitle"
+                                        });
+                                    }
+                                }
 
                                 if (item.type === 'hls' && item.playlist) {
                                     try {
@@ -204,7 +249,7 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
                                                     url: `${customResolver}/api/playlist?url=${encodeURIComponent(item.playlist)}&height=${v.height}`,
                                                     quality: badge,
                                                     headers: streamHeaders,
-                                                    subtitles: sSubs
+                                                    subtitles: [...sSubs]
                                                 });
                                             }
                                         }
@@ -216,7 +261,7 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
                                         url: item.playlist,
                                         quality: "Auto",
                                         headers: streamHeaders,
-                                        subtitles: sSubs
+                                        subtitles: [...sSubs]
                                     });
                                 }
                             }
@@ -299,11 +344,18 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
                     const playlist = item.playlist;
                     const captions = item.captions || [];
 
-                    const serverSubs = [...globalSubtitles, ...captions.map(c => ({
-                        url: c.url,
-                        language: (c.language || c.id || "en").toLowerCase(),
-                        name: c.language || c.id || "Subtitle"
-                    })).filter(s => !!s.url)];
+                    const serverSubs = [...combinedSubtitles];
+                    const serverSubsSeen = new Set(serverSubs.map(s => s.url));
+                    for (const c of captions) {
+                        if (c.url && !serverSubsSeen.has(c.url)) {
+                            serverSubsSeen.add(c.url);
+                            serverSubs.unshift({
+                                url: c.url,
+                                language: (c.language || c.id || "en").toLowerCase(),
+                                name: c.language || c.id || "Subtitle"
+                            });
+                        }
+                    }
 
                     if (type === "hls" && playlist) {
                         try {
@@ -323,7 +375,7 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
                                             : v.url,
                                         quality: badge,
                                         headers: streamHeaders,
-                                        subtitles: serverSubs
+                                        subtitles: [...serverSubs]
                                     });
                                 }
                             }
@@ -338,7 +390,7 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
                             url: playlist,
                             quality: "Auto",
                             headers: streamHeaders,
-                            subtitles: serverSubs
+                            subtitles: [...serverSubs]
                         });
                     } else if (type === "file" && item.qualities) {
                         const qualities = item.qualities;
@@ -354,7 +406,7 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
                                     url: fileUrl,
                                     quality: badge,
                                     headers: streamHeaders,
-                                    subtitles: serverSubs
+                                    subtitles: [...serverSubs]
                                 });
                             }
                         }
@@ -373,6 +425,9 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
         for (const resList of serverResults) {
             if (Array.isArray(resList)) {
                 for (const stream of resList) {
+                    if (!stream.subtitles || stream.subtitles.length === 0) {
+                        stream.subtitles = [...combinedSubtitles];
+                    }
                     streams.push(stream);
                 }
             }
@@ -387,3 +442,4 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
 }
 
 export { getStreams, onSettings };
+

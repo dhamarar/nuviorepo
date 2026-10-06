@@ -1,6 +1,6 @@
 /**
  * cinejoy - Built from src/cinejoy/
- * Generated: 2026-10-06T00:14:20.379Z
+ * Generated: 2026-10-06T08:00:04.254Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -86,6 +86,149 @@ var TMDB_BASE_URL = "https://api.themoviedb.org/3";
 var TMDB_API_KEY = "8476a7ab80ad76f0936744df0430e67c";
 var FALLBACK_SERVERS = ["Nebula", "Lisbon", "Scout", "Riga", "Solara", "Athens"];
 var ENC_DEC_API = "https://enc-dec.app/api/enc-cinejoy";
+var DEFAULT_SUBTITLES_HOST = "https://subs.wing.st";
+var CANDIDATE_SUBTITLES_HOSTS = [
+  "https://subs.wing.st",
+  "https://subs.shegu.st"
+];
+var LANGUAGE_NAMES = {
+  en: "English",
+  id: "Indonesian",
+  es: "Spanish",
+  ar: "Arabic",
+  fr: "French",
+  de: "German",
+  it: "Italian",
+  pt: "Portuguese",
+  pob: "Portuguese (Brazil)",
+  "pt-br": "Portuguese (Brazil)",
+  ru: "Russian",
+  ja: "Japanese",
+  ko: "Korean",
+  zh: "Chinese",
+  "zh-cn": "Chinese (Simplified)",
+  "zh-tw": "Chinese (Traditional)",
+  hi: "Hindi",
+  tr: "Turkish",
+  nl: "Dutch",
+  pl: "Polish",
+  sv: "Swedish",
+  vi: "Vietnamese",
+  th: "Thai",
+  ro: "Romanian",
+  bn: "Bengali",
+  sr: "Serbian",
+  el: "Greek",
+  fa: "Persian",
+  he: "Hebrew",
+  fi: "Finnish",
+  bg: "Bulgarian",
+  hr: "Croatian",
+  cs: "Czech",
+  kn: "Kannada",
+  et: "Estonian",
+  si: "Sinhala",
+  ml: "Malayalam",
+  hu: "Hungarian",
+  da: "Danish",
+  ms: "Malay",
+  tl: "Filipino",
+  uk: "Ukrainian",
+  no: "Norwegian",
+  sk: "Slovak",
+  sl: "Slovenian",
+  ur: "Urdu",
+  ta: "Tamil",
+  te: "Telugu",
+  mr: "Marathi",
+  gu: "Gujarati",
+  pa: "Punjabi",
+  sw: "Swahili",
+  af: "Afrikaans",
+  sq: "Albanian",
+  hy: "Armenian",
+  az: "Azerbaijani",
+  eu: "Basque",
+  be: "Belarusian",
+  bs: "Bosnian",
+  ca: "Catalan",
+  gl: "Galician",
+  ka: "Georgian",
+  is: "Icelandic",
+  kk: "Kazakh",
+  km: "Khmer",
+  mk: "Macedonian",
+  mn: "Mongolian",
+  ne: "Nepali",
+  uz: "Uzbek",
+  cy: "Welsh",
+  my: "Burmese",
+  ps: "Pashto",
+  sd: "Sindhi",
+  so: "Somali",
+  am: "Amharic",
+  ku: "Kurdish"
+};
+var ISO_639_2_TO_1 = {
+  eng: "en",
+  ind: "id",
+  spa: "es",
+  ara: "ar",
+  fra: "fr",
+  fre: "fr",
+  deu: "de",
+  ger: "de",
+  ita: "it",
+  por: "pt",
+  pob: "pt",
+  rus: "ru",
+  jpn: "ja",
+  kor: "ko",
+  zho: "zh",
+  chi: "zh",
+  hin: "hi",
+  tur: "tr",
+  nld: "nl",
+  dut: "nl",
+  pol: "pl",
+  swe: "sv",
+  vie: "vi",
+  tha: "th",
+  ron: "ro",
+  rum: "ro",
+  ben: "bn",
+  srp: "sr",
+  ell: "el",
+  gre: "el",
+  fas: "fa",
+  per: "fa",
+  heb: "he",
+  fin: "fi",
+  bul: "bg",
+  hrv: "hr",
+  ces: "cs",
+  cze: "cs",
+  kan: "kn",
+  est: "et",
+  sin: "si",
+  mal: "ml",
+  hun: "hu",
+  dan: "da",
+  msa: "ms",
+  may: "ms",
+  fil: "tl",
+  tgl: "tl",
+  ukr: "uk",
+  nor: "no",
+  slk: "sk",
+  slo: "sk",
+  slv: "sl",
+  urd: "ur",
+  tam: "ta",
+  tel: "te",
+  mar: "mr",
+  pan: "pa"
+};
 var HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
   "Accept": "application/json, text/plain, */*"
@@ -195,134 +338,22 @@ var NATSUKI_BASE = "https://natsuki.hls.lol/subs";
 var GRANITE_BASE = "https://sub.vdrk.site/v1";
 var OPENSUBS_BASE = "https://rest.opensubtitles.org";
 var OPENSUBS_USER_AGENT = "VLSub 0.10.2";
-var LANGUAGE_MAP = {
-  english: "en",
-  french: "fr",
-  spanish: "es",
-  "spanish (latin america)": "es",
-  "spanish (la)": "es",
-  latino: "es",
-  german: "de",
-  italian: "it",
-  portuguese: "pt",
-  "portuguese (br)": "pt-br",
-  "portuguese (brazil)": "pt-br",
-  "portuguese (brazilian)": "pt-br",
-  brazilian: "pt-br",
-  "brazilian portuguese": "pt-br",
-  dutch: "nl",
-  russian: "ru",
-  japanese: "ja",
-  korean: "ko",
-  "chinese (simplified)": "zh-cn",
-  "chinese (traditional)": "zh-tw",
-  chinese: "zh",
-  arabic: "ar",
-  hindi: "hi",
-  turkish: "tr",
-  polish: "pl",
-  swedish: "sv",
-  norwegian: "no",
-  danish: "da",
-  finnish: "fi",
-  greek: "el",
-  hebrew: "he",
-  thai: "th",
-  vietnamese: "vi",
-  indonesian: "id",
-  czech: "cs",
-  hungarian: "hu",
-  romanian: "ro",
-  ukrainian: "uk",
-  bulgarian: "bg",
-  croatian: "hr",
-  serbian: "sr",
-  slovak: "sk",
-  slovenian: "sl",
-  estonian: "et",
-  latvian: "lv",
-  lithuanian: "lt",
-  farsi: "fa",
-  persian: "fa",
-  bengali: "bn",
-  tamil: "ta",
-  telugu: "te",
-  malay: "ms",
-  filipino: "tl",
-  tagalog: "tl",
-  albanian: "sq",
-  armenian: "hy",
-  azerbaijani: "az",
-  basque: "eu",
-  belarusian: "be",
-  bosnian: "bs",
-  catalan: "ca",
-  galician: "gl",
-  georgian: "ka",
-  icelandic: "is",
-  kazakh: "kk",
-  khmer: "km",
-  macedonian: "mk",
-  malayalam: "ml",
-  marathi: "mr",
-  mongolian: "mn",
-  nepali: "ne",
-  punjabi: "pa",
-  sinhala: "si",
-  swahili: "sw",
-  urdu: "ur",
-  uzbek: "uz",
-  welsh: "cy",
-  kurdish: "ku",
-  sorani: "ckb",
-  "kurdish (sorani)": "ckb",
-  "kurdish (kurmanji)": "ku",
-  ckb: "ckb",
-  burmese: "my",
-  myanmar: "my",
-  pashto: "ps",
-  pushto: "ps",
-  sindhi: "sd",
-  somali: "so",
-  afrikaans: "af",
-  akan: "ak",
-  ewe: "ee",
-  oromo: "om",
-  amharic: "am",
-  yoruba: "yo",
-  zulu: "zu",
-  hausa: "ha",
-  lao: "lo",
-  tibetan: "bo",
-  esperanto: "eo",
-  latin: "la",
-  "norwegian bokm\xE5l": "nb",
-  "norwegian nynorsk": "nn",
-  flemish: "nl",
-  cantonese: "zh-yue",
-  "chinese (cantonese)": "zh-yue",
-  "serbo-croatian": "sh"
-};
-function languageNameToCode(name) {
-  const key = String(name || "").trim().toLowerCase();
-  if (!key)
-    return "";
-  if (LANGUAGE_MAP[key])
-    return LANGUAGE_MAP[key];
-  if (/^[a-z]{2}(-[a-z]{2})?$/.test(key))
-    return key;
-  return "";
+function normalizeLanguageCode(code) {
+  if (!code)
+    return "en";
+  const clean2 = String(code).toLowerCase().trim();
+  if (ISO_639_2_TO_1[clean2])
+    return ISO_639_2_TO_1[clean2];
+  if (LANGUAGE_NAMES[clean2])
+    return clean2;
+  const two = clean2.slice(0, 2);
+  if (LANGUAGE_NAMES[two])
+    return two;
+  return clean2;
 }
-function languageDisplayName(code) {
-  const wanted = String(code || "").toLowerCase();
-  if (!wanted)
-    return "Unknown";
-  for (const key in LANGUAGE_MAP) {
-    if (LANGUAGE_MAP[key] === wanted) {
-      return key.replace(/\b\w/g, (c) => c.toUpperCase());
-    }
-  }
-  return wanted.toUpperCase();
+function getLanguageDisplayName(code) {
+  const norm = normalizeLanguageCode(code);
+  return LANGUAGE_NAMES[norm] || LANGUAGE_NAMES[code] || norm.toUpperCase();
 }
 function fetchJson(_0) {
   return __async(this, arguments, function* (url, options = {}) {
@@ -338,43 +369,123 @@ function fetchJson(_0) {
     }
   });
 }
-function fetchGranite(tmdbId, mediaType, season, episode) {
+var cachedSubtitlesHost = DEFAULT_SUBTITLES_HOST;
+function fetchCinejoySubtitles(tmdbId, mediaType, season, episode, maxPerLang = 3) {
+  return __async(this, null, function* () {
+    var _a, _b;
+    const subtitles = [];
+    if (!tmdbId)
+      return subtitles;
+    const isTv = mediaType === "tv" || mediaType === "series";
+    const hosts = [cachedSubtitlesHost, ...CANDIDATE_SUBTITLES_HOSTS.filter((h) => h !== cachedSubtitlesHost)];
+    for (const host of hosts) {
+      try {
+        const type = isTv ? "tv" : "movie";
+        let url = `${host}/subtitles?type=${type}&tmdb=${encodeURIComponent(tmdbId)}`;
+        if (isTv) {
+          url += `&season=${encodeURIComponent(season || 1)}&episode=${encodeURIComponent(episode || 1)}`;
+        }
+        const result = yield fetchJson(url, {
+          headers: {
+            "Accept": "application/json",
+            "Origin": DEFAULT_DOMAIN,
+            "Referer": `${DEFAULT_DOMAIN}/`,
+            "User-Agent": HEADERS["User-Agent"]
+          }
+        });
+        if (!result.ok || !result.data)
+          continue;
+        const list = Array.isArray(result.data) ? result.data : Array.isArray((_a = result.data) == null ? void 0 : _a.subtitles) ? result.data.subtitles : Array.isArray((_b = result.data) == null ? void 0 : _b.data) ? result.data.data : [];
+        if (list.length === 0)
+          continue;
+        cachedSubtitlesHost = host;
+        const langCount = {};
+        for (const item of list) {
+          const subUrl = item.url || item.id;
+          if (!subUrl || typeof subUrl !== "string" || !subUrl.startsWith("http"))
+            continue;
+          const rawLang = item.language || item.lang || "en";
+          const langCode = normalizeLanguageCode(rawLang);
+          const currentCount = langCount[langCode] || 0;
+          if (maxPerLang > 0 && currentCount >= maxPerLang) {
+            continue;
+          }
+          langCount[langCode] = currentCount + 1;
+          const baseName = getLanguageDisplayName(langCode);
+          const display = String(item.display || item.label || "");
+          const isHi = /[\._\- ](hi|sdh|cc)[\._\- ]|\b(hi|sdh|cc)\.srt$/i.test(display);
+          let trackName = baseName;
+          if (isHi) {
+            trackName = `${baseName} [CC]`;
+          } else if (currentCount > 0) {
+            trackName = `${baseName} #${currentCount + 1}`;
+          }
+          subtitles.push({
+            url: subUrl,
+            language: langCode,
+            name: trackName,
+            headers: {
+              "Origin": DEFAULT_DOMAIN,
+              "Referer": `${DEFAULT_DOMAIN}/`,
+              "User-Agent": HEADERS["User-Agent"]
+            }
+          });
+        }
+        if (subtitles.length > 0) {
+          return subtitles;
+        }
+      } catch (e) {
+        console.warn(`[Cinejoy] Subtitle fetch from ${host} error:`, e.message);
+      }
+    }
+    return subtitles;
+  });
+}
+function fetchGranite(tmdbId, mediaType, season, episode, maxPerLang = 3) {
   return __async(this, null, function* () {
     if (!tmdbId)
       return [];
-    const url = mediaType === "tv" ? GRANITE_BASE + "/tv/" + encodeURIComponent(tmdbId) + "/" + encodeURIComponent(season || 1) + "/" + encodeURIComponent(episode || 1) : GRANITE_BASE + "/movie/" + encodeURIComponent(tmdbId);
+    const isTv = mediaType === "tv" || mediaType === "series";
+    const url = isTv ? `${GRANITE_BASE}/tv/${encodeURIComponent(tmdbId)}/${encodeURIComponent(season || 1)}/${encodeURIComponent(episode || 1)}` : `${GRANITE_BASE}/movie/${encodeURIComponent(tmdbId)}`;
     const result = yield fetchJson(url, { headers: { "User-Agent": HEADERS["User-Agent"] } });
     if (!result.ok || !Array.isArray(result.data)) {
       return [];
     }
     const tracks = [];
+    const langCount = {};
     for (let i = 0; i < result.data.length; i++) {
       const item = result.data[i];
       if (!item || !item.file || !item.label)
         continue;
       const label = String(item.label);
       const base = label.replace(/\s*hi\d*$/i, "").replace(/\d+$/, "");
-      const code = languageNameToCode(base);
+      const code = normalizeLanguageCode(base);
       if (!code)
         continue;
+      const currentCount = langCount[code] || 0;
+      if (maxPerLang > 0 && currentCount >= maxPerLang)
+        continue;
+      langCount[code] = currentCount + 1;
+      const isHi = /hi/i.test(label);
+      const baseName = getLanguageDisplayName(code);
+      const name = isHi ? `${baseName} [CC]` : currentCount > 0 ? `${baseName} #${currentCount + 1}` : label;
       tracks.push({
         url: item.file,
         language: code,
-        name: label
+        name
       });
     }
     return tracks;
   });
 }
-function fetchNatsuki(imdbId, season, episode) {
+function fetchNatsuki(imdbId, season, episode, maxPerLang = 3) {
   return __async(this, null, function* () {
-    if (!imdbId) {
+    if (!imdbId)
       return [];
-    }
-    const parts = ["imdbId=" + encodeURIComponent(imdbId)];
+    const parts = [`imdbId=${encodeURIComponent(imdbId)}`];
     if (season && episode) {
-      parts.push("season=" + encodeURIComponent(season));
-      parts.push("episode=" + encodeURIComponent(episode));
+      parts.push(`season=${encodeURIComponent(season)}`);
+      parts.push(`episode=${encodeURIComponent(episode)}`);
     }
     const headers = {
       "Accept": "application/json, text/plain, */*",
@@ -382,84 +493,134 @@ function fetchNatsuki(imdbId, season, episode) {
       "Referer": "https://atlantic.st/",
       "User-Agent": HEADERS["User-Agent"]
     };
-    const result = yield fetchJson(
-      NATSUKI_BASE + "?" + parts.join("&"),
-      { headers }
-    );
+    const result = yield fetchJson(`${NATSUKI_BASE}?${parts.join("&")}`, { headers });
     if (!result.ok || !result.data || !Array.isArray(result.data.subtitles)) {
       return [];
     }
     const tracks = [];
+    const langCount = {};
     for (let i = 0; i < result.data.subtitles.length; i++) {
       const item = result.data.subtitles[i];
       if (!item || !item.url)
         continue;
-      const code = languageNameToCode(item.language) || languageNameToCode(item.langCode);
+      const code = normalizeLanguageCode(item.language || item.langCode);
       if (!code)
         continue;
+      const currentCount = langCount[code] || 0;
+      if (maxPerLang > 0 && currentCount >= maxPerLang)
+        continue;
+      langCount[code] = currentCount + 1;
+      const baseName = getLanguageDisplayName(code);
       tracks.push({
         url: item.url,
         language: code,
-        name: item.fileName || languageDisplayName(code)
+        name: currentCount > 0 ? `${baseName} #${currentCount + 1}` : baseName
       });
     }
     return tracks;
   });
 }
-function fetchOpenSubtitles(imdbId, season, episode) {
+function fetchOpenSubtitles(imdbId, mediaType, season, episode, maxPerLang = 3) {
   return __async(this, null, function* () {
-    if (!imdbId) {
+    var _a;
+    if (!imdbId)
       return [];
-    }
-    const id = String(imdbId).replace(/^tt/, "");
-    const hasEpisode = Boolean(season && episode);
-    const path = "/search/" + (hasEpisode ? "episode-" + encodeURIComponent(episode) + "/" : "") + "imdbid-" + encodeURIComponent(id) + (hasEpisode ? "/season-" + encodeURIComponent(season) : "");
-    const headers = {
-      "Accept": "application/json, text/plain, */*",
-      "User-Agent": HEADERS["User-Agent"],
-      "X-User-Agent": OPENSUBS_USER_AGENT
-    };
-    const result = yield fetchJson(OPENSUBS_BASE + path, { headers });
-    if (!result.ok || !Array.isArray(result.data)) {
-      return [];
-    }
-    const tracks = [];
-    for (let i = 0; i < result.data.length; i++) {
-      const item = result.data[i];
-      if (!item || !item.SubDownloadLink)
-        continue;
-      const code = languageNameToCode(item.LanguageName);
-      if (!code)
-        continue;
-      const url = String(item.SubDownloadLink).replace(/\.gz$/i, "").replace("/download/", "/download/subencoding-utf8/");
-      tracks.push({
-        url,
-        language: code,
-        name: item.LanguageName || languageDisplayName(code)
+    const isTv = mediaType === "tv" || mediaType === "series";
+    try {
+      const subUrl = isTv ? `https://opensubtitles-v3.strem.io/subtitles/series/${imdbId}:${season || 1}:${episode || 1}.json` : `https://opensubtitles-v3.strem.io/subtitles/movie/${imdbId}.json`;
+      const res = yield fetchJson(subUrl, {
+        headers: { "User-Agent": HEADERS["User-Agent"] }
       });
+      if (res.ok && Array.isArray((_a = res.data) == null ? void 0 : _a.subtitles) && res.data.subtitles.length > 0) {
+        const tracks = [];
+        const langCount = {};
+        for (const sub of res.data.subtitles) {
+          if (!sub || !sub.url || typeof sub.url !== "string")
+            continue;
+          const code = normalizeLanguageCode(sub.lang || "en");
+          const currentCount = langCount[code] || 0;
+          if (maxPerLang > 0 && currentCount >= maxPerLang)
+            continue;
+          langCount[code] = currentCount + 1;
+          const baseName = getLanguageDisplayName(code);
+          tracks.push({
+            url: sub.url,
+            language: code,
+            name: currentCount > 0 ? `${baseName} #${currentCount + 1}` : baseName
+          });
+        }
+        if (tracks.length > 0)
+          return tracks;
+      }
+    } catch (e) {
     }
-    return tracks;
+    try {
+      const cleanId = String(imdbId).replace(/^tt/, "");
+      const hasEpisode = Boolean(isTv && season && episode);
+      const path = "/search/" + (hasEpisode ? `episode-${encodeURIComponent(episode)}/` : "") + `imdbid-${encodeURIComponent(cleanId)}` + (hasEpisode ? `/season-${encodeURIComponent(season)}` : "");
+      const res = yield fetchJson(OPENSUBS_BASE + path, {
+        headers: {
+          "Accept": "application/json, text/plain, */*",
+          "User-Agent": HEADERS["User-Agent"],
+          "X-User-Agent": OPENSUBS_USER_AGENT
+        }
+      });
+      if (res.ok && Array.isArray(res.data)) {
+        const tracks = [];
+        const langCount = {};
+        for (let i = 0; i < res.data.length; i++) {
+          const item = res.data[i];
+          if (!item || !item.SubDownloadLink)
+            continue;
+          const code = normalizeLanguageCode(item.LanguageName || item.ISO639);
+          if (!code)
+            continue;
+          const currentCount = langCount[code] || 0;
+          if (maxPerLang > 0 && currentCount >= maxPerLang)
+            continue;
+          langCount[code] = currentCount + 1;
+          const url = String(item.SubDownloadLink).replace(/\.gz$/i, "").replace("/download/", "/download/subencoding-utf8/");
+          const baseName = getLanguageDisplayName(code);
+          tracks.push({
+            url,
+            language: code,
+            name: currentCount > 0 ? `${baseName} #${currentCount + 1}` : baseName
+          });
+        }
+        return tracks;
+      }
+    } catch (e) {
+    }
+    return [];
   });
 }
-function fetchAllSubtitles(tmdbId, mediaType, season, episode, imdbId) {
+function fetchAllSubtitles(tmdbId, mediaType, season, episode, imdbId, maxPerLang = 3) {
   return __async(this, null, function* () {
     const jobs = [
-      fetchGranite(tmdbId, mediaType, season, episode),
-      fetchNatsuki(imdbId, season, episode),
-      fetchOpenSubtitles(imdbId, season, episode)
+      fetchCinejoySubtitles(tmdbId, mediaType, season, episode, maxPerLang),
+      fetchGranite(tmdbId, mediaType, season, episode, maxPerLang),
+      fetchNatsuki(imdbId, season, episode, maxPerLang),
+      fetchOpenSubtitles(imdbId, mediaType, season, episode, maxPerLang)
     ];
     const settled = yield Promise.all(jobs.map((job) => job.catch(() => [])));
     const allTracks = [];
     const seen = /* @__PURE__ */ new Set();
+    const langTotals = {};
     for (const list of settled) {
       if (!Array.isArray(list))
         continue;
       for (const track of list) {
-        const key = track.language + "|" + track.url;
-        if (!seen.has(key)) {
-          seen.add(key);
-          allTracks.push(track);
-        }
+        if (!track || !track.url)
+          continue;
+        if (seen.has(track.url))
+          continue;
+        const code = track.language || "en";
+        const count = langTotals[code] || 0;
+        if (maxPerLang > 0 && count >= maxPerLang)
+          continue;
+        seen.add(track.url);
+        langTotals[code] = count + 1;
+        allTracks.push(track);
       }
     }
     return allTracks;
@@ -1351,6 +1512,20 @@ function onSettings() {
         label: "Custom Resolver URL (Optional)",
         placeholder: "https://your-cinejoy-worker.workers.dev",
         description: "Dedicated Cloudflare Worker / API endpoint for environments without raw binary HTTP support."
+      },
+      {
+        type: "select",
+        key: "maxSubtitlesPerLanguage",
+        label: "Max subtitles per language",
+        description: "Maximum subtitle tracks to keep per language (default: 3). Set to All to keep every track.",
+        options: [
+          { label: "1", value: "1" },
+          { label: "2", value: "2" },
+          { label: "3", value: "3" },
+          { label: "5", value: "5" },
+          { label: "All", value: "0" }
+        ],
+        defaultValue: "3"
       }
     ];
   });
@@ -1386,13 +1561,24 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
     if (customResolver) {
       console.log(`[Cinejoy] Using custom stream resolver: ${customResolver}`);
     }
+    let maxPerLang = 3;
+    if (settings.maxSubtitlesPerLanguage !== void 0) {
+      const parsed = Number(settings.maxSubtitlesPerLanguage);
+      if (!isNaN(parsed) && parsed >= 0)
+        maxPerLang = parsed;
+    }
     try {
       const domainPromise = resolveDomain();
       const tmdbInfoPromise = getTmdbDetails(cleanTmdb, isTv ? "tv" : "movie");
-      const subsPromise = tmdbInfoPromise.then((tmdbInfo2) => fetchAllSubtitles(cleanTmdb, isTv ? "tv" : "movie", cleanSeason, cleanEpisode, tmdbInfo2 == null ? void 0 : tmdbInfo2.imdbId));
-      const [domain, tmdbInfo, globalSubtitles] = yield Promise.all([domainPromise, tmdbInfoPromise, subsPromise]);
-      const { host: apiHost, servers } = yield getActiveServers(domain);
+      const [domain, tmdbInfo] = yield Promise.all([domainPromise, tmdbInfoPromise]);
+      const serversPromise = getActiveServers(domain);
+      const subsPromise = fetchAllSubtitles(cleanTmdb, isTv ? "tv" : "movie", cleanSeason, cleanEpisode, tmdbInfo == null ? void 0 : tmdbInfo.imdbId, maxPerLang);
+      const [{ host: apiHost, servers }, combinedSubtitles] = yield Promise.all([
+        serversPromise,
+        subsPromise
+      ]);
       console.log(`[Cinejoy] Active domain: ${domain}, API Host: ${apiHost}, Servers: ${servers.join(", ")}`);
+      console.log(`[Cinejoy] Resolved ${combinedSubtitles.length} subtitle track(s)`);
       const streamHeaders = {
         "Origin": domain,
         "Referer": `${domain}/`,
@@ -1411,16 +1597,35 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
               if (rRes.ok) {
                 const rJson = yield rRes.json();
                 if (Array.isArray(rJson == null ? void 0 : rJson.streams) && rJson.streams.length > 0) {
-                  return relabelResolverStreams(rJson.streams, serverDisplayName, customResolver);
+                  const list = relabelResolverStreams(rJson.streams, serverDisplayName, customResolver);
+                  for (const st of list) {
+                    const sSubs = [...combinedSubtitles];
+                    const existing = new Set(sSubs.map((s2) => s2.url));
+                    for (const sub of st.subtitles || []) {
+                      if (sub && sub.url && !existing.has(sub.url)) {
+                        existing.add(sub.url);
+                        sSubs.unshift(sub);
+                      }
+                    }
+                    st.subtitles = sSubs;
+                  }
+                  return list;
                 }
                 const rRawStreams = ((_a = rJson == null ? void 0 : rJson.data) == null ? void 0 : _a.stream) || [];
                 const parsedFromResolver = [];
                 for (const item of rRawStreams) {
-                  const sSubs = [...globalSubtitles, ...(item.captions || []).map((c) => ({
-                    url: c.url,
-                    language: (c.language || c.id || "en").toLowerCase(),
-                    name: c.language || c.id || "Subtitle"
-                  })).filter((s2) => !!s2.url)];
+                  const sSubs = [...combinedSubtitles];
+                  const sSubsSeen = new Set(sSubs.map((s2) => s2.url));
+                  for (const c of item.captions || []) {
+                    if (c.url && !sSubsSeen.has(c.url)) {
+                      sSubsSeen.add(c.url);
+                      sSubs.unshift({
+                        url: c.url,
+                        language: (c.language || c.id || "en").toLowerCase(),
+                        name: c.language || c.id || "Subtitle"
+                      });
+                    }
+                  }
                   if (item.type === "hls" && item.playlist) {
                     try {
                       const m3u8Res = yield fetch(item.playlist, { headers: streamHeaders });
@@ -1436,7 +1641,7 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
                             url: `${customResolver}/api/playlist?url=${encodeURIComponent(item.playlist)}&height=${v.height}`,
                             quality: badge,
                             headers: streamHeaders,
-                            subtitles: sSubs
+                            subtitles: [...sSubs]
                           });
                         }
                       }
@@ -1448,7 +1653,7 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
                       url: item.playlist,
                       quality: "Auto",
                       headers: streamHeaders,
-                      subtitles: sSubs
+                      subtitles: [...sSubs]
                     });
                   }
                 }
@@ -1513,11 +1718,18 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
             const type2 = item.type;
             const playlist = item.playlist;
             const captions = item.captions || [];
-            const serverSubs = [...globalSubtitles, ...captions.map((c) => ({
-              url: c.url,
-              language: (c.language || c.id || "en").toLowerCase(),
-              name: c.language || c.id || "Subtitle"
-            })).filter((s2) => !!s2.url)];
+            const serverSubs = [...combinedSubtitles];
+            const serverSubsSeen = new Set(serverSubs.map((s2) => s2.url));
+            for (const c of captions) {
+              if (c.url && !serverSubsSeen.has(c.url)) {
+                serverSubsSeen.add(c.url);
+                serverSubs.unshift({
+                  url: c.url,
+                  language: (c.language || c.id || "en").toLowerCase(),
+                  name: c.language || c.id || "Subtitle"
+                });
+              }
+            }
             if (type2 === "hls" && playlist) {
               try {
                 const m3u8Res = yield fetch(playlist, { headers: streamHeaders });
@@ -1533,7 +1745,7 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
                       url: customResolver ? `${customResolver}/api/playlist?url=${encodeURIComponent(playlist)}&height=${v.height}` : v.url,
                       quality: badge,
                       headers: streamHeaders,
-                      subtitles: serverSubs
+                      subtitles: [...serverSubs]
                     });
                   }
                 }
@@ -1546,7 +1758,7 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
                 url: playlist,
                 quality: "Auto",
                 headers: streamHeaders,
-                subtitles: serverSubs
+                subtitles: [...serverSubs]
               });
             } else if (type2 === "file" && item.qualities) {
               const qualities = item.qualities;
@@ -1562,7 +1774,7 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
                     url: fileUrl,
                     quality: badge,
                     headers: streamHeaders,
-                    subtitles: serverSubs
+                    subtitles: [...serverSubs]
                   });
                 }
               }
@@ -1578,6 +1790,9 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
       for (const resList of serverResults) {
         if (Array.isArray(resList)) {
           for (const stream of resList) {
+            if (!stream.subtitles || stream.subtitles.length === 0) {
+              stream.subtitles = [...combinedSubtitles];
+            }
             streams.push(stream);
           }
         }
