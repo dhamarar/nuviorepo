@@ -1,6 +1,6 @@
 {
   "name": "Nuvio Repo",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "scrapers": [
     {
       "id": "cinejoy",
@@ -28,7 +28,7 @@
       "id": "kisskh",
       "name": "Kisskh",
       "description": "Asian dramas, anime, and movies with multi-language subtitles from Kisskh",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "author": "Nuvio Team",
       "supportedTypes": [
         "movie",

@@ -1,6 +1,6 @@
 /**
  * kisskh - Built from src/kisskh/
- * Generated: 2026-09-21T01:54:45.735Z
+ * Generated: 2026-10-06T08:17:50.517Z
  */
 var __async = (__this, __arguments, generator) => {
   return new Promise((resolve, reject) => {
@@ -205,10 +205,11 @@ function getKey(episodeId, isSub = false) {
 }
 
 // src/kisskh/utils.js
-function getTMDBDetails(tmdbId, mediaType) {
+function getTMDBDetails(tmdbId, mediaType, season = 1) {
   return __async(this, null, function* () {
     var _a;
-    const endpoint = mediaType === "tv" ? "tv" : "movie";
+    const isTv = mediaType === "tv" || mediaType === "series";
+    const endpoint = isTv ? "tv" : "movie";
     const url = `${TMDB_BASE_URL}/${endpoint}/${tmdbId}?api_key=${TMDB_API_KEY}&append_to_response=external_ids`;
     const response = yield fetch(url, {
       headers: { "Accept": "application/json", "User-Agent": "Mozilla/5.0" }
@@ -216,13 +217,30 @@ function getTMDBDetails(tmdbId, mediaType) {
     if (!response.ok)
       throw new Error(`TMDB API error: ${response.status}`);
     const data = yield response.json();
-    const title = mediaType === "tv" ? data.name || data.original_name : data.title || data.original_title;
-    const releaseDate = mediaType === "tv" ? data.first_air_date : data.release_date;
-    const year = releaseDate ? parseInt(releaseDate.split("-")[0]) : null;
+    const title = isTv ? data.name || data.original_name : data.title || data.original_title;
+    const releaseDate = isTv ? data.first_air_date : data.release_date;
+    const year = releaseDate ? parseInt(releaseDate.split("-")[0], 10) : null;
+    let seasonYear = year;
+    let seasonTitle = null;
+    const reqSeasonNum = Number(season) || 1;
+    if (isTv && Array.isArray(data.seasons)) {
+      const targetSeason = data.seasons.find((s) => Number(s.season_number) === reqSeasonNum);
+      if (targetSeason) {
+        if (targetSeason.air_date) {
+          seasonYear = parseInt(targetSeason.air_date.split("-")[0], 10);
+        }
+        if (targetSeason.name) {
+          seasonTitle = targetSeason.name;
+        }
+      }
+    }
     return {
       title,
-      originalTitle: mediaType === "tv" ? data.original_name : data.original_title,
+      originalTitle: isTv ? data.original_name : data.original_title,
       year,
+      seasonYear,
+      seasonTitle,
+      seasons: data.seasons || [],
       imdbId: ((_a = data.external_ids) == null ? void 0 : _a.imdb_id) || null,
       data
     };
@@ -254,24 +272,94 @@ function calculateTitleSimilarity(title1, title2) {
   }
   return score;
 }
-function findBestMatch(mediaInfo, searchResults) {
+function extractSeasonInfo(title, baseTitle = "") {
+  if (!title)
+    return { season: null, isMultiSeason: false, seasons: [] };
+  const cleanTitle = title.trim();
+  const multiMatch = cleanTitle.match(/(?:season|s)\s*(\d+)\s*\+\s*(?:season|s)?\s*(\d+)/i);
+  if (multiMatch) {
+    const s1 = parseInt(multiMatch[1], 10);
+    const s2 = parseInt(multiMatch[2], 10);
+    const seasons = [Math.min(s1, s2), Math.max(s1, s2)];
+    return { season: null, isMultiSeason: true, seasons };
+  }
+  const explicitMatch = cleanTitle.match(/\b(?:season|series)\s*[-:]?\s*(\d+)\b/i) || cleanTitle.match(/\b[sS](\d+)\b/);
+  if (explicitMatch) {
+    const num = parseInt(explicitMatch[1], 10);
+    if (num > 0 && num < 100) {
+      return { season: num, isMultiSeason: false, seasons: [num] };
+    }
+  }
+  const ordinalMatch = cleanTitle.match(/\b(\d+)(?:st|nd|rd|th)\s+season\b/i);
+  if (ordinalMatch) {
+    const num = parseInt(ordinalMatch[1], 10);
+    if (num > 0 && num < 100) {
+      return { season: num, isMultiSeason: false, seasons: [num] };
+    }
+  }
+  const partMatch = cleanTitle.match(/\b(?:season|part|cour)\s*[-:]?\s*([IVXLCDM]+|\d+)\b/i);
+  if (partMatch) {
+    let num;
+    if (/^\d+$/.test(partMatch[1])) {
+      num = parseInt(partMatch[1], 10);
+    } else {
+      const romanMap = { "I": 1, "II": 2, "III": 3, "IV": 4, "V": 5, "VI": 6, "VII": 7, "VIII": 8, "IX": 9, "X": 10 };
+      num = romanMap[partMatch[1].toUpperCase()] || null;
+    }
+    if (num && num > 0 && num < 100) {
+      return { season: num, isMultiSeason: false, seasons: [num] };
+    }
+  }
+  if (baseTitle) {
+    const cleanBase = baseTitle.replace(/[^\w\s]/g, "").trim().toLowerCase();
+    const noYear = cleanTitle.replace(/\(\d{4}\)/g, "");
+    const segments = [noYear, ...noYear.split(/[-:|\/]/)];
+    for (const seg of segments) {
+      const cleanSeg = seg.replace(/[^\w\s]/g, "").trim().toLowerCase();
+      const m = cleanSeg.match(new RegExp("^" + cleanBase + "\\s+(\\d+)(?:\\s+|$)", "i"));
+      if (m) {
+        const num = parseInt(m[1], 10);
+        if (num > 0 && num < 100) {
+          return { season: num, isMultiSeason: false, seasons: [num] };
+        }
+      }
+    }
+  }
+  return { season: null, isMultiSeason: false, seasons: [] };
+}
+function cleanTitleForComparison(title) {
+  return title.replace(/\(\d{4}\)/g, "").replace(/\b(?:season|series)\s*[-:]?\s*\d+\b/gi, "").replace(/\b\d+(?:st|nd|rd|th)\s+season\b/gi, "").replace(/\b(?:season|part|cour)\s*[-:]?\s*([IVXLCDM]+|\d+)\b/gi, "").replace(/\bs\d+\b/gi, "").trim();
+}
+function findBestMatch(mediaInfo, searchResults, mediaType = "movie", season = 1) {
   if (!searchResults || searchResults.length === 0)
     return null;
   let bestMatch = null;
-  let bestScore = 0;
+  let bestScore = -Infinity;
+  const isTv = mediaType === "tv" || mediaType === "series";
+  const targetSeason = Number(season) || 1;
   for (const result of searchResults) {
     const resTitle = result.title || "";
     const yearMatch = resTitle.match(/\((\d{4})\)/);
-    const resYear = yearMatch ? parseInt(yearMatch[1]) : null;
-    const cleanResTitle = resTitle.replace(/\(\d{4}\)/g, "").trim();
-    let score = calculateTitleSimilarity(mediaInfo.title, cleanResTitle);
+    const resYear = yearMatch ? parseInt(yearMatch[1], 10) : null;
+    const cleanResTitle = cleanTitleForComparison(resTitle);
+    let titleScore = Math.max(
+      calculateTitleSimilarity(mediaInfo.title, cleanResTitle),
+      calculateTitleSimilarity(mediaInfo.title, resTitle.replace(/\(\d{4}\)/g, "").trim())
+    );
     if (mediaInfo.originalTitle) {
-      const origScore = calculateTitleSimilarity(mediaInfo.originalTitle, cleanResTitle);
-      if (origScore > score)
-        score = origScore;
+      const origScore = Math.max(
+        calculateTitleSimilarity(mediaInfo.originalTitle, cleanResTitle),
+        calculateTitleSimilarity(mediaInfo.originalTitle, resTitle.replace(/\(\d{4}\)/g, "").trim())
+      );
+      if (origScore > titleScore)
+        titleScore = origScore;
     }
-    if (mediaInfo.year && resYear) {
-      const yearDiff = Math.abs(mediaInfo.year - resYear);
+    if (titleScore < 0.25)
+      continue;
+    let score = titleScore;
+    const targetYear = isTv && mediaInfo.seasonYear ? mediaInfo.seasonYear : mediaInfo.year;
+    if (targetYear && resYear) {
+      const yearDiff = Math.abs(targetYear - resYear);
       if (yearDiff === 0)
         score += 0.25;
       else if (yearDiff === 1)
@@ -279,7 +367,29 @@ function findBestMatch(mediaInfo, searchResults) {
       else if (yearDiff > 4)
         score -= 0.3;
     }
-    if (score > bestScore && score > 0.35) {
+    if (isTv) {
+      const seasonInfo = extractSeasonInfo(resTitle, mediaInfo.title);
+      if (seasonInfo.isMultiSeason) {
+        if (seasonInfo.seasons.includes(targetSeason)) {
+          score += 0.5;
+        } else {
+          score -= 0.5;
+        }
+      } else if (seasonInfo.season !== null) {
+        if (seasonInfo.season === targetSeason) {
+          score += 0.6;
+        } else {
+          score -= 0.7;
+        }
+      } else {
+        if (targetSeason === 1) {
+          score += 0.1;
+        } else {
+          score -= 0.2;
+        }
+      }
+    }
+    if (score > bestScore && score > 0.3) {
       bestScore = score;
       bestMatch = result;
     }
@@ -290,16 +400,36 @@ function findBestMatch(mediaInfo, searchResults) {
 // src/kisskh/index.js
 function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
   return __async(this, null, function* () {
-    console.log(`[Kisskh] Fetching streams for TMDB ID: ${tmdbId}, Type: ${mediaType}, S: ${season}, E: ${episode}`);
+    let id = tmdbId;
+    let type = mediaType;
+    let s = season;
+    let ep = episode;
+    if (typeof tmdbId === "object" && tmdbId !== null) {
+      id = tmdbId.tmdbId || tmdbId.id || tmdbId.tmdb;
+      type = tmdbId.mediaType || tmdbId.type || type || "movie";
+      s = tmdbId.season || season || 1;
+      ep = tmdbId.episode || episode || 1;
+    }
+    const cleanTmdb = String(id || "").trim();
+    if (!cleanTmdb || cleanTmdb === "[object Object]") {
+      console.warn("[Kisskh] Invalid TMDB ID provided:", tmdbId);
+      return [];
+    }
+    const cleanType = String(type || "movie").toLowerCase().trim();
+    const isTv = cleanType === "tv" || cleanType === "series";
+    const cleanSeason = Number(s) || 1;
+    const cleanEpisode = Number(ep) || 1;
+    console.log(`[Kisskh] Fetching streams for TMDB ID: ${cleanTmdb}, Type: ${isTv ? "tv" : "movie"}, S: ${cleanSeason}, E: ${cleanEpisode}`);
     const streams = [];
     try {
-      const mediaInfo = yield getTMDBDetails(tmdbId, mediaType);
-      console.log(`[Kisskh] TMDB Title: "${mediaInfo.title}" (${mediaInfo.year || "N/A"})`);
+      const mediaInfo = yield getTMDBDetails(cleanTmdb, isTv ? "tv" : "movie", cleanSeason);
+      console.log(`[Kisskh] TMDB Title: "${mediaInfo.title}" (${mediaInfo.seasonYear || mediaInfo.year || "N/A"})`);
       const searchQueries = [mediaInfo.title];
       if (mediaInfo.originalTitle && mediaInfo.originalTitle !== mediaInfo.title) {
         searchQueries.push(mediaInfo.originalTitle);
       }
       let searchResults = [];
+      const seenIds = /* @__PURE__ */ new Set();
       for (const query of searchQueries) {
         try {
           const encodedQuery = encodeURIComponent(query.trim());
@@ -309,8 +439,12 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
           if (res.ok) {
             const data = yield res.json();
             if (Array.isArray(data) && data.length > 0) {
-              searchResults = data;
-              break;
+              for (const item of data) {
+                if (item && item.id && !seenIds.has(item.id)) {
+                  seenIds.add(item.id);
+                  searchResults.push(item);
+                }
+              }
             }
           }
         } catch (err) {
@@ -321,9 +455,44 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
         console.log(`[Kisskh] No results found for "${mediaInfo.title}"`);
         return [];
       }
-      const matchedDrama = findBestMatch(mediaInfo, searchResults);
+      let matchedDrama = findBestMatch(mediaInfo, searchResults, isTv ? "tv" : "movie", cleanSeason);
+      if (isTv && cleanSeason > 1) {
+        const currentMatchSeason = matchedDrama ? extractSeasonInfo(matchedDrama.title, mediaInfo.title) : null;
+        const hasAccurateMatch = currentMatchSeason && (currentMatchSeason.season === cleanSeason || currentMatchSeason.isMultiSeason && currentMatchSeason.seasons.includes(cleanSeason));
+        if (!hasAccurateMatch) {
+          const seasonSearchQueries = [
+            `${mediaInfo.title} Season ${cleanSeason}`,
+            `${mediaInfo.title} ${cleanSeason}`
+          ];
+          if (mediaInfo.originalTitle && mediaInfo.originalTitle !== mediaInfo.title) {
+            seasonSearchQueries.push(`${mediaInfo.originalTitle} Season ${cleanSeason}`);
+          }
+          for (const query of seasonSearchQueries) {
+            try {
+              const encodedQuery = encodeURIComponent(query.trim());
+              const res = yield fetch(`${MAIN_URL}/api/DramaList/Search?q=${encodedQuery}`, {
+                headers: HEADERS
+              });
+              if (res.ok) {
+                const data = yield res.json();
+                if (Array.isArray(data) && data.length > 0) {
+                  for (const item of data) {
+                    if (item && item.id && !seenIds.has(item.id)) {
+                      seenIds.add(item.id);
+                      searchResults.push(item);
+                    }
+                  }
+                }
+              }
+            } catch (err) {
+              console.warn(`[Kisskh] Targeted season search failed for "${query}":`, err.message);
+            }
+          }
+          matchedDrama = findBestMatch(mediaInfo, searchResults, "tv", cleanSeason);
+        }
+      }
       if (!matchedDrama || !matchedDrama.id) {
-        console.log(`[Kisskh] No confident title match found for "${mediaInfo.title}"`);
+        console.log(`[Kisskh] No confident match found for "${mediaInfo.title}" (S: ${cleanSeason})`);
         return [];
       }
       console.log(`[Kisskh] Matched Drama: "${matchedDrama.title}" (ID: ${matchedDrama.id})`);
@@ -341,17 +510,37 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
         return [];
       }
       let targetEpisode = null;
-      if (mediaType === "movie") {
+      if (!isTv) {
         targetEpisode = episodes[0];
       } else {
-        const epNum = Number(episode) || 1;
+        const seasonInfo = extractSeasonInfo(matchedDrama.title, mediaInfo.title);
+        let targetEpNum = cleanEpisode;
+        if (seasonInfo.isMultiSeason || seasonInfo.season === null && cleanSeason > 1) {
+          let prevEpisodes = 0;
+          if (Array.isArray(mediaInfo.seasons)) {
+            for (const sItem of mediaInfo.seasons) {
+              if (sItem && Number(sItem.season_number) >= 1 && Number(sItem.season_number) < cleanSeason) {
+                prevEpisodes += Number(sItem.episode_count) || 0;
+              }
+            }
+          }
+          const absoluteEp = prevEpisodes + cleanEpisode;
+          if (prevEpisodes > 0 && episodes.some((e) => Number(e.number) === absoluteEp)) {
+            targetEpNum = absoluteEp;
+            console.log(`[Kisskh] Using absolute episode number: ${targetEpNum} (offset ${prevEpisodes} + ep ${cleanEpisode})`);
+          }
+        }
         targetEpisode = episodes.find((e) => {
           const num = Number(e.number);
-          return num === epNum || Math.floor(num) === epNum;
-        }) || episodes[0];
+          return num === targetEpNum || Math.abs(num - targetEpNum) < 0.01;
+        }) || episodes.find((e) => Math.floor(Number(e.number)) === Math.floor(targetEpNum));
+        if (!targetEpisode) {
+          const sortedEpisodes = [...episodes].sort((a, b) => Number(a.number) - Number(b.number));
+          targetEpisode = sortedEpisodes[0];
+        }
       }
       if (!targetEpisode || !targetEpisode.id) {
-        console.log(`[Kisskh] Episode ${episode} not found in drama`);
+        console.log(`[Kisskh] Episode ${cleanEpisode} not found in drama`);
         return [];
       }
       const episodeId = targetEpisode.id;
@@ -366,12 +555,12 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
           if (subRes.ok) {
             const subList = yield subRes.json();
             if (Array.isArray(subList)) {
-              for (const s of subList) {
-                if (s.src) {
+              for (const sItem of subList) {
+                if (sItem.src) {
                   subtitles.push({
-                    url: s.src,
-                    language: (s.land || "en").toLowerCase(),
-                    name: s.label || s.land || "Subtitle"
+                    url: sItem.src,
+                    language: (sItem.land || "en").toLowerCase(),
+                    name: sItem.label || sItem.land || "Subtitle"
                   });
                 }
               }
