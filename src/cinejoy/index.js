@@ -1,4 +1,5 @@
 import { resolveDomain, getActiveServers, getTmdbDetails } from './utils.js';
+import { fetchAllSubtitles } from './subtitles.js';
 import { seal } from './wasm.js';
 import { decrypt } from './crypto.js';
 import { HEADERS } from './constants.js';
@@ -145,8 +146,9 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
         // Step 1: Resolve domain and fetch TMDB info concurrently
         const domainPromise = resolveDomain();
         const tmdbInfoPromise = getTmdbDetails(cleanTmdb, isTv ? "tv" : "movie");
+        const subsPromise = tmdbInfoPromise.then(tmdbInfo => fetchAllSubtitles(cleanTmdb, isTv ? "tv" : "movie", cleanSeason, cleanEpisode, tmdbInfo?.imdbId));
 
-        const [domain, tmdbInfo] = await Promise.all([domainPromise, tmdbInfoPromise]);
+        const [domain, tmdbInfo, globalSubtitles] = await Promise.all([domainPromise, tmdbInfoPromise, subsPromise]);
 
         // Step 2: Discover active servers
         const { host: apiHost, servers } = await getActiveServers(domain);
@@ -181,11 +183,11 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
                             const rRawStreams = rJson?.data?.stream || [];
                             const parsedFromResolver = [];
                             for (const item of rRawStreams) {
-                                const sSubs = (item.captions || []).map(c => ({
+                                const sSubs = [...globalSubtitles, ...(item.captions || []).map(c => ({
                                     url: c.url,
                                     language: (c.language || c.id || "en").toLowerCase(),
                                     name: c.language || c.id || "Subtitle"
-                                })).filter(s => !!s.url);
+                                })).filter(s => !!s.url)];
 
                                 if (item.type === 'hls' && item.playlist) {
                                     try {
@@ -297,11 +299,11 @@ async function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) 
                     const playlist = item.playlist;
                     const captions = item.captions || [];
 
-                    const serverSubs = captions.map(c => ({
+                    const serverSubs = [...globalSubtitles, ...captions.map(c => ({
                         url: c.url,
                         language: (c.language || c.id || "en").toLowerCase(),
                         name: c.language || c.id || "Subtitle"
-                    })).filter(s => !!s.url);
+                    })).filter(s => !!s.url)];
 
                     if (type === "hls" && playlist) {
                         try {
