@@ -1,6 +1,6 @@
 {
   "name": "Nuvio Repo",
-  "version": "1.10.0",
+  "version": "1.11.0",
   "scrapers": [
     {
       "id": "cinejoy",
@@ -15,6 +15,27 @@
       "filename": "providers/cinejoy.js",
       "enabled": true,
       "hasSettings": true,
+      "formats": [
+        "m3u8",
+        "mp4"
+      ],
+      "logo": "https://www.google.com/s2/favicons?domain=cinejoy.pk&sz=128",
+      "contentLanguage": [
+        "en"
+      ]
+    },
+    {
+      "id": "cinejoy-tv",
+      "name": "Cinejoy-TV",
+      "description": "Cinejoy streaming provider for TV with hardcoded worker resolver (cinejoy-phi.vercel.app)",
+      "version": "1.0.0",
+      "author": "Nuvio Team",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/cinejoy-tv.js",
+      "enabled": true,
       "formats": [
         "m3u8",
         "mp4"
