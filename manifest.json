@@ -1,7 +1,32 @@
 {
   "name": "Nuvio Repo",
-  "version": "1.11.0",
+  "version": "1.12.0",
   "scrapers": [
+    {
+      "id": "movy",
+      "name": "Movy",
+      "description": "Watch movies and TV series from Movy.sx with multi-server and multi-language subtitles",
+      "version": "1.0.0",
+      "author": "Nuvio Team",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/movy.js",
+      "enabled": true,
+      "hasSettings": true,
+      "formats": [
+        "m3u8"
+      ],
+      "logo": "https://www.google.com/s2/favicons?domain=movy.sx&sz=128",
+      "contentLanguage": [
+        "en",
+        "de",
+        "fr",
+        "hi",
+        "es"
+      ]
+    },
     {
       "id": "cinejoy",
       "name": "Cinejoy",
