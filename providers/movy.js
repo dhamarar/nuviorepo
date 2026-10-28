@@ -1,7 +1,23 @@
 /**
  * movy - Built from src/movy/
- * Generated: 2026-10-28T05:04:45.951Z
+ * Generated: 2026-10-28T05:59:02.396Z
  */
+var __defProp = Object.defineProperty;
+var __getOwnPropSymbols = Object.getOwnPropertySymbols;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __propIsEnum = Object.prototype.propertyIsEnumerable;
+var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+var __spreadValues = (a, b) => {
+  for (var prop in b || (b = {}))
+    if (__hasOwnProp.call(b, prop))
+      __defNormalProp(a, prop, b[prop]);
+  if (__getOwnPropSymbols)
+    for (var prop of __getOwnPropSymbols(b)) {
+      if (__propIsEnum.call(b, prop))
+        __defNormalProp(a, prop, b[prop]);
+    }
+  return a;
+};
 var __async = (__this, __arguments, generator) => {
   return new Promise((resolve, reject) => {
     var fulfilled = (value) => {
@@ -39,8 +55,8 @@ var ALL_SERVERS = [
   { id: "miami", name: "Miami", note: "Original audio / 4K", lang: "en", group: "en" },
   { id: "boise", name: "Boise", note: "Original audio / 4K", lang: "en", group: "en" },
   { id: "vegas", name: "Vegas", note: "Original audio", lang: "en", group: "en" },
-  { id: "chicago", name: "Chicago", note: "Original audio", lang: "en", group: "en" },
   { id: "reno", name: "Reno", note: "Original audio", lang: "en", group: "en" },
+  { id: "chicago", name: "Chicago", note: "Original audio", lang: "en", group: "en" },
   { id: "oakland", name: "Oakland", note: "Original audio", lang: "en", group: "en" },
   { id: "seattle", name: "Seattle", note: "Original audio", lang: "en", group: "en" },
   { id: "phoenix", name: "Phoenix", note: "Original audio", lang: "en", group: "en" },
@@ -549,27 +565,34 @@ function onSettings() {
       { type: "header", label: "Movy Configuration" },
       {
         type: "select",
-        key: "serverGroup",
-        label: "Server Filter",
-        description: "Choose which server regions to query (default: All servers).",
+        key: "serverMode",
+        label: "Mode Seleksi Server",
+        description: "Pilih cara penentuan server streaming (default: Otomatis - Server Terbaik).",
         options: [
-          { label: "All Servers (17 servers)", value: "all" },
-          { label: "English / Original Audio Only (12 servers)", value: "en" },
-          { label: "International Dubbed Audio (DE, FR, HI, ES)", value: "multi" }
+          { label: "Otomatis (Server Terbaik - Rekomendasi)", value: "auto" },
+          { label: "Server Utama + Cadangan (Top 2)", value: "top2" },
+          { label: "Semua Server (17 Server)", value: "all" },
+          { label: "Hanya Miami (4K / 1080p)", value: "miami" },
+          { label: "Hanya Boise (4K / 1080p)", value: "boise" },
+          { label: "Hanya Vegas (Fast Adaptive HLS)", value: "vegas" },
+          { label: "Dubbing Jerman (Munich & Berlin)", value: "german" },
+          { label: "Dubbing Prancis (Paris)", value: "french" },
+          { label: "Dubbing Spanyol (Cancun)", value: "spanish" },
+          { label: "Dubbing Hindi (Delhi)", value: "hindi" }
         ],
-        defaultValue: "all"
+        defaultValue: "auto"
       },
       {
         type: "select",
         key: "maxSubtitlesPerLanguage",
-        label: "Max subtitles per language",
-        description: "Maximum subtitle tracks to keep per language (default: 3).",
+        label: "Maksimal Subtitle per Bahasa",
+        description: "Batas jumlah trek subtitle per bahasa (default: 3).",
         options: [
           { label: "1", value: "1" },
           { label: "2", value: "2" },
           { label: "3", value: "3" },
           { label: "5", value: "5" },
-          { label: "All", value: "0" }
+          { label: "Semua", value: "0" }
         ],
         defaultValue: "3"
       }
@@ -585,7 +608,66 @@ var QUALITY_WEIGHTS = {
   "360p": 10,
   "Auto": 50
 };
-var BATCH_SIZE = 4;
+function sortStreams(streams) {
+  return streams.sort((a, b) => {
+    const wa = QUALITY_WEIGHTS[a.quality] || 0;
+    const wb = QUALITY_WEIGHTS[b.quality] || 0;
+    return wb - wa;
+  });
+}
+function queryServer(server, baseParams, cleanTmdb, sharedSeed, centralSubs, tmdbInfo) {
+  return __async(this, null, function* () {
+    if (!server)
+      return [];
+    try {
+      const params = __spreadValues({}, baseParams);
+      if (server.id === "chicago") {
+        const altTitle = (tmdbInfo == null ? void 0 : tmdbInfo.originalTitle) && (tmdbInfo == null ? void 0 : tmdbInfo.originalTitle) !== (tmdbInfo == null ? void 0 : tmdbInfo.title) ? tmdbInfo.originalTitle : void 0;
+        if (altTitle)
+          params.altTitle = encodeURIComponent(altTitle);
+      } else if (server.id === "berlin") {
+        const altTitle = (tmdbInfo == null ? void 0 : tmdbInfo.titleGerman) || (tmdbInfo == null ? void 0 : tmdbInfo.title);
+        if (altTitle)
+          params.altTitle = encodeURIComponent(altTitle);
+      }
+      if (server.extraParams) {
+        Object.assign(params, server.extraParams);
+      }
+      const data = yield fetchServerSources(server.id, params, cleanTmdb, sharedSeed);
+      if (!data || !Array.isArray(data.sources) || data.sources.length === 0) {
+        return [];
+      }
+      let validSources = data.sources.filter((s) => s && s.url);
+      if (server.filter) {
+        validSources = validSources.filter(server.filter);
+      }
+      if (validSources.length === 0) {
+        return [];
+      }
+      const serverSubs = formatServerSubtitles(data.subtitles);
+      const combinedSubtitles = mergeSubtitles(centralSubs, serverSubs);
+      return validSources.map((src) => {
+        const qBadge = normalizeQuality(src.quality);
+        const qText = qualityLabel(src.quality);
+        const label = streamLabel(server.name, qText);
+        return {
+          name: label,
+          title: label,
+          url: src.url,
+          quality: qBadge,
+          headers: {
+            "User-Agent": HEADERS["User-Agent"],
+            "Referer": "https://www.movy.sx/",
+            "Origin": "https://www.movy.sx"
+          },
+          subtitles: combinedSubtitles
+        };
+      });
+    } catch (e) {
+      return [];
+    }
+  });
+}
 function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
   return __async(this, null, function* () {
     let id = tmdbId;
@@ -609,7 +691,7 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
     const cleanEpisode = Number(ep) || 1;
     console.log(`[Movy] Fetching streams for TMDB: ${cleanTmdb}, Type: ${isTv ? "tv" : "movie"}, S: ${cleanSeason}, E: ${cleanEpisode}`);
     const settings = globalThis.SCRAPER_SETTINGS || {};
-    const serverGroup = settings.serverGroup || "all";
+    const serverMode = settings.serverMode || "auto";
     let maxSubsPerLang = 3;
     if (settings.maxSubtitlesPerLanguage !== void 0) {
       const parsed = Number(settings.maxSubtitlesPerLanguage);
@@ -622,93 +704,115 @@ function getStreams(tmdbId, mediaType = "movie", season = 1, episode = 1) {
       fetchSeed(cleanTmdb).catch(() => null)
     ]);
     const titleEnglish = (tmdbInfo == null ? void 0 : tmdbInfo.title) || "";
-    const titleOriginal = (tmdbInfo == null ? void 0 : tmdbInfo.originalTitle) || "";
     const year = (tmdbInfo == null ? void 0 : tmdbInfo.year) || "";
     const imdbId = (tmdbInfo == null ? void 0 : tmdbInfo.imdbId) || "";
     const totalSeasons = (tmdbInfo == null ? void 0 : tmdbInfo.totalSeasons) || 1;
-    const targetServers = ALL_SERVERS.filter((srv) => {
-      if (serverGroup === "all")
-        return true;
-      return srv.group === serverGroup;
-    });
-    console.log(`[Movy] Querying ${targetServers.length} servers in batches of ${BATCH_SIZE} for "${titleEnglish}" (${year})`);
+    const baseParams = {
+      title: encodeURIComponent(titleEnglish),
+      mediaType: isTv ? "tv" : "movie",
+      year,
+      totalSeasons,
+      episodeId: cleanEpisode,
+      seasonId: cleanSeason,
+      tmdbId: cleanTmdb,
+      imdbId
+    };
+    console.log(`[Movy] Server mode: "${serverMode}" for "${titleEnglish}" (${year})`);
+    const serverMap = new Map(ALL_SERVERS.map((srv) => [srv.id, srv]));
+    if (serverMode === "auto") {
+      const [miamiRes, boiseRes] = yield Promise.all([
+        queryServer(serverMap.get("miami"), baseParams, cleanTmdb, sharedSeed, centralSubs, tmdbInfo),
+        queryServer(serverMap.get("boise"), baseParams, cleanTmdb, sharedSeed, centralSubs, tmdbInfo)
+      ]);
+      if (miamiRes.length > 0) {
+        console.log(`[Movy] Best server selected: Miami (${miamiRes.length} streams)`);
+        return sortStreams(miamiRes);
+      }
+      if (boiseRes.length > 0) {
+        console.log(`[Movy] Best server selected: Boise (${boiseRes.length} streams)`);
+        return sortStreams(boiseRes);
+      }
+      const tier2 = [serverMap.get("vegas"), serverMap.get("reno"), serverMap.get("chicago")].filter(Boolean);
+      const tier2Results = yield Promise.all(tier2.map((s2) => queryServer(s2, baseParams, cleanTmdb, sharedSeed, centralSubs, tmdbInfo)));
+      for (const res of tier2Results) {
+        if (res.length > 0) {
+          console.log(`[Movy] Fallback server selected: ${res[0].name.split(" - ")[1]} (${res.length} stream)`);
+          return sortStreams(res);
+        }
+      }
+      const tier3 = ALL_SERVERS.filter((s2) => s2.group === "en" && !["miami", "boise", "vegas", "reno", "chicago"].includes(s2.id));
+      const tier3Results = yield Promise.all(tier3.map((s2) => queryServer(s2, baseParams, cleanTmdb, sharedSeed, centralSubs, tmdbInfo)));
+      for (const res of tier3Results) {
+        if (res.length > 0) {
+          console.log(`[Movy] Fallback server selected: ${res[0].name.split(" - ")[1]} (${res.length} stream)`);
+          return sortStreams(res);
+        }
+      }
+      const tier4 = ALL_SERVERS.filter((s2) => s2.group === "multi");
+      const tier4Results = yield Promise.all(tier4.map((s2) => queryServer(s2, baseParams, cleanTmdb, sharedSeed, centralSubs, tmdbInfo)));
+      for (const res of tier4Results) {
+        if (res.length > 0)
+          return sortStreams(res);
+      }
+      return [];
+    }
+    if (serverMode === "top2") {
+      const topStreams = [];
+      const checkedServers = [
+        "miami",
+        "boise",
+        "vegas",
+        "reno",
+        "chicago",
+        "oakland",
+        "seattle",
+        "phoenix",
+        "atlanta",
+        "portland",
+        "austin",
+        "dallas"
+      ];
+      for (let i = 0; i < checkedServers.length; i += 2) {
+        const pair = [serverMap.get(checkedServers[i]), serverMap.get(checkedServers[i + 1])].filter(Boolean);
+        const results = yield Promise.all(pair.map((s2) => queryServer(s2, baseParams, cleanTmdb, sharedSeed, centralSubs, tmdbInfo)));
+        for (const res of results) {
+          if (res.length > 0) {
+            topStreams.push(...res);
+          }
+        }
+        if (topStreams.length >= 2)
+          break;
+      }
+      return sortStreams(topStreams);
+    }
+    let targetServers = [];
+    if (serverMode === "german") {
+      targetServers = [serverMap.get("munich"), serverMap.get("berlin")].filter(Boolean);
+    } else if (serverMode === "french") {
+      targetServers = [serverMap.get("paris")].filter(Boolean);
+    } else if (serverMode === "spanish") {
+      targetServers = [serverMap.get("cancun")].filter(Boolean);
+    } else if (serverMode === "hindi") {
+      targetServers = [serverMap.get("delhi")].filter(Boolean);
+    } else if (serverMap.has(serverMode)) {
+      targetServers = [serverMap.get(serverMode)].filter(Boolean);
+    } else {
+      targetServers = ALL_SERVERS;
+    }
     const allStreams = [];
+    const BATCH_SIZE = 4;
     for (let i = 0; i < targetServers.length; i += BATCH_SIZE) {
       const batch = targetServers.slice(i, i + BATCH_SIZE);
-      const settled = yield Promise.allSettled(batch.map((server) => __async(this, null, function* () {
-        try {
-          const params = {
-            title: encodeURIComponent(titleEnglish),
-            mediaType: isTv ? "tv" : "movie",
-            year,
-            totalSeasons,
-            episodeId: cleanEpisode,
-            seasonId: cleanSeason,
-            tmdbId: cleanTmdb,
-            imdbId
-          };
-          if (server.id === "chicago") {
-            const altTitle = titleOriginal && titleOriginal !== titleEnglish ? titleOriginal : void 0;
-            if (altTitle)
-              params.altTitle = encodeURIComponent(altTitle);
-          } else if (server.id === "berlin") {
-            const altTitle = (tmdbInfo == null ? void 0 : tmdbInfo.titleGerman) || titleEnglish;
-            if (altTitle)
-              params.altTitle = encodeURIComponent(altTitle);
-          }
-          if (server.extraParams) {
-            Object.assign(params, server.extraParams);
-          }
-          const data = yield fetchServerSources(server.id, params, cleanTmdb, sharedSeed);
-          if (!data || !Array.isArray(data.sources) || data.sources.length === 0) {
-            return [];
-          }
-          let validSources = data.sources.filter((s2) => s2 && s2.url);
-          if (server.filter) {
-            validSources = validSources.filter(server.filter);
-          }
-          if (validSources.length === 0) {
-            return [];
-          }
-          const serverSubs = formatServerSubtitles(data.subtitles);
-          const combinedSubtitles = mergeSubtitles(centralSubs, serverSubs);
-          const streamResults = [];
-          for (const src of validSources) {
-            const qBadge = normalizeQuality(src.quality);
-            const qText = qualityLabel(src.quality);
-            const label = streamLabel(server.name, qText);
-            streamResults.push({
-              name: label,
-              title: label,
-              url: src.url,
-              quality: qBadge,
-              headers: {
-                "User-Agent": HEADERS["User-Agent"],
-                "Referer": "https://www.movy.sx/",
-                "Origin": "https://www.movy.sx"
-              },
-              subtitles: combinedSubtitles
-            });
-          }
-          return streamResults;
-        } catch (e) {
-          console.warn(`[Movy] Server ${server.name} error:`, e.message);
-          return [];
-        }
-      })));
+      const settled = yield Promise.allSettled(
+        batch.map((server) => queryServer(server, baseParams, cleanTmdb, sharedSeed, centralSubs, tmdbInfo))
+      );
       for (const res of settled) {
         if (res.status === "fulfilled" && Array.isArray(res.value)) {
           allStreams.push(...res.value);
         }
       }
     }
-    allStreams.sort((a, b) => {
-      const wa = QUALITY_WEIGHTS[a.quality] || 0;
-      const wb = QUALITY_WEIGHTS[b.quality] || 0;
-      return wb - wa;
-    });
-    console.log(`[Movy] Successfully found ${allStreams.length} stream(s) across servers`);
-    return allStreams;
+    return sortStreams(allStreams);
   });
 }
 module.exports = { getStreams, onSettings };
